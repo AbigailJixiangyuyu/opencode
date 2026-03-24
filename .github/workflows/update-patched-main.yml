@@ -1,0 +1,98 @@
+
+name: Update patched-main from upstream release
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-patched-main:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout current repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set git identity
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Get latest upstream release tag
+        id: upstream_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(gh release view --repo anomalyco/opencode --json tagName -q .tagName)
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Latest upstream tag: $TAG"
+
+      - name: Check current processed tag
+        id: check_done
+        run: |
+          git fetch origin patched-main || true
+
+          LAST_TAG=""
+          if git rev-parse --verify origin/patched-main >/dev/null 2>&1; then
+            LAST_TAG=$(git log origin/patched-main --grep='^UPSTREAM_TAG=' -n 1 --pretty=%B | sed -n 's/^UPSTREAM_TAG=//p' | head -n 1)
+          fi
+
+          echo "Last processed tag: $LAST_TAG"
+          if [ "$LAST_TAG" = "${{ steps.upstream_release.outputs.tag }}" ]; then
+            echo "done=true" >> $GITHUB_OUTPUT
+          else
+            echo "done=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Stop if already processed
+        if: steps.check_done.outputs.done == 'true'
+        run: echo "patched-main is already up to date."
+
+      - name: Add upstream remote
+        if: steps.check_done.outputs.done != 'true'
+        run: |
+          git remote add upstream https://github.com/anomalyco/opencode.git || true
+          git fetch upstream --tags
+
+      - name: Checkout upstream release tag
+        if: steps.check_done.outputs.done != 'true'
+        run: |
+          git checkout -B patched-work ${{ steps.upstream_release.outputs.tag }}
+
+      - name: Cherry-pick Chinese patch commit
+        if: steps.check_done.outputs.done != 'true'
+        run: |
+          git cherry-pick 0e023b528
+
+      - name: Mark processed upstream tag
+        if: steps.check_done.outputs.done != 'true'
+        run: |
+          git commit --allow-empty -m "UPSTREAM_TAG=${{ steps.upstream_release.outputs.tag }}"
+
+      - name: Setup Bun
+        if: steps.check_done.outputs.done != 'true'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        if: steps.check_done.outputs.done != 'true'
+        run: |
+          bun install
+
+      - name: Run build
+        if: steps.check_done.outputs.done != 'true'
+        run: |
+          bun run ./packages/opencode/script/build.ts
+
+      - name: Update patched-main
+        if: steps.check_done.outputs.done != 'true'
+        run: |
+          git branch -f patched-main
+          git push origin patched-main --force
