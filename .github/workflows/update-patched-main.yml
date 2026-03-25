@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "0 * * * *"
   workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: "Rebuild and republish current upstream tag"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -45,6 +51,12 @@ jobs:
       - name: Check current processed tag
         id: check_done
         run: |
+          if [ "${{ inputs.force_rebuild }}" = "true" ]; then
+            echo "force_rebuild=true, processing current upstream tag"
+            echo "done=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
           git fetch origin patched-main || true
 
           LAST_TAG=""
