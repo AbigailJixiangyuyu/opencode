@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: write
-  workflows: write
 
 jobs:
   update-patched-main:
@@ -22,15 +21,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set git identity
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Setup git committer
+        id: committer
+        uses: ./.github/actions/setup-git-committer
+        with:
+          opencode-app-id: ${{ vars.OPENCODE_APP_ID }}
+          opencode-app-secret: ${{ secrets.OPENCODE_APP_SECRET }}
 
       - name: Get latest upstream release tag
         id: upstream_release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.committer.outputs.token }}
         run: |
           TAG=$(gh release view --repo anomalyco/opencode --json tagName -q .tagName)
           echo "tag=$TAG" >> $GITHUB_OUTPUT
@@ -116,7 +117,7 @@ jobs:
       - name: Ensure patched release exists
         if: steps.check_done.outputs.done != 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.committer.outputs.token }}
         run: |
           if gh release view "${{ steps.patched_release.outputs.tag }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             echo "Release already exists: ${{ steps.patched_release.outputs.tag }}"
@@ -134,6 +135,6 @@ jobs:
           OPENCODE_RELEASE: "1"
           OPENCODE_VERSION: ${{ steps.patched_release.outputs.version }}
           GH_REPO: ${{ github.repository }}
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.committer.outputs.token }}
         run: |
           bun run ./packages/opencode/script/build.ts --single --skip-install
