@@ -10,10 +10,7 @@ permissions:
 
 jobs:
   update-patched-main:
-    runs-on: windows-2025
-    defaults:
-      run:
-        shell: bash
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout current repository
@@ -98,13 +95,13 @@ jobs:
         run: |
           bun install
 
-      - name: Build Windows x64 TUI
+      - name: Build CLI artifacts
         if: steps.check_done.outputs.done != 'true'
         env:
           OPENCODE_CHANNEL: latest
           OPENCODE_VERSION: ${{ steps.patched_release.outputs.version }}
         run: |
-          bun run ./packages/opencode/script/build.ts --single
+          bun run ./packages/opencode/script/build.ts
 
       - name: Preserve workflow files from previous patched-main
         if: steps.check_done.outputs.done != 'true'
@@ -138,10 +135,11 @@ jobs:
       - name: Upload Windows x64 TUI release
         if: steps.check_done.outputs.done != 'true'
         env:
-          OPENCODE_CHANNEL: latest
-          OPENCODE_RELEASE: "1"
-          OPENCODE_VERSION: ${{ steps.patched_release.outputs.version }}
-          GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          bun run ./packages/opencode/script/build.ts --single --skip-install
+          cd packages/opencode/dist/opencode-windows-x64/bin
+          zip -r ../../opencode-windows-x64-${{ steps.patched_release.outputs.version }}.zip .
+          gh release upload "${{ steps.patched_release.outputs.tag }}" \
+            "$GITHUB_WORKSPACE/packages/opencode/dist/opencode-windows-x64-${{ steps.patched_release.outputs.version }}.zip" \
+            --clobber \
+            --repo "${{ github.repository }}"
