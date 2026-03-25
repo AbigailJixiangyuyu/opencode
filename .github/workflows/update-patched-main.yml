@@ -1,13 +1,13 @@
-
 name: Update patched-main from upstream release
 
 on:
   schedule:
-    - cron: '0 * * * *'
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 permissions:
   contents: write
+  workflows: write
 
 jobs:
   update-patched-main:
