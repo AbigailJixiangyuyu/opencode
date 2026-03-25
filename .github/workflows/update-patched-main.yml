@@ -11,7 +11,10 @@ permissions:
 
 jobs:
   update-patched-main:
-    runs-on: ubuntu-latest
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout current repository
@@ -32,6 +35,16 @@ jobs:
           TAG=$(gh release view --repo anomalyco/opencode --json tagName -q .tagName)
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "Latest upstream tag: $TAG"
+
+      - name: Compute patched release tag
+        id: patched_release
+        run: |
+          BASE="${{ steps.upstream_release.outputs.tag }}"
+          VER="${BASE#v}-patched"
+          TAG="v${VER}"
+          echo "version=$VER" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Patched release tag: $TAG"
 
       - name: Check current processed tag
         id: check_done
@@ -86,13 +99,41 @@ jobs:
         run: |
           bun install
 
-      - name: Run build
+      - name: Build Windows x64 TUI
         if: steps.check_done.outputs.done != 'true'
+        env:
+          OPENCODE_CHANNEL: latest
+          OPENCODE_VERSION: ${{ steps.patched_release.outputs.version }}
         run: |
-          bun run ./packages/opencode/script/build.ts
+          bun run ./packages/opencode/script/build.ts --single
 
       - name: Update patched-main
         if: steps.check_done.outputs.done != 'true'
         run: |
           git branch -f patched-main
           git push origin patched-main --force
+
+      - name: Ensure patched release exists
+        if: steps.check_done.outputs.done != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ steps.patched_release.outputs.tag }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release already exists: ${{ steps.patched_release.outputs.tag }}"
+            exit 0
+          fi
+          gh release create "${{ steps.patched_release.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --title "${{ steps.patched_release.outputs.tag }}" \
+            --notes "Patched from upstream ${{ steps.upstream_release.outputs.tag }} with cherry-pick 0e023b528"
+
+      - name: Upload Windows x64 TUI release
+        if: steps.check_done.outputs.done != 'true'
+        env:
+          OPENCODE_CHANNEL: latest
+          OPENCODE_RELEASE: "1"
+          OPENCODE_VERSION: ${{ steps.patched_release.outputs.version }}
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bun run ./packages/opencode/script/build.ts --single --skip-install
