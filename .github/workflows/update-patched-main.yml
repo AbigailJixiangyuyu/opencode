@@ -155,3 +155,15 @@ jobs:
             "$GITHUB_WORKSPACE/packages/opencode/dist/opencode-windows-x64-${{ steps.patched_release.outputs.version }}.zip" \
             --clobber \
             --repo "${{ github.repository }}"
+
+      - name: Upload Linux x64 TUI release
+        if: steps.check_done.outputs.done != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd packages/opencode/dist/opencode-linux-x64/bin
+          tar -czf ../../opencode-linux-x64-${{ steps.patched_release.outputs.version }}.tar.gz .
+          gh release upload "${{ steps.patched_release.outputs.tag }}" \
+            "$GITHUB_WORKSPACE/packages/opencode/dist/opencode-linux-x64-${{ steps.patched_release.outputs.version }}.tar.gz" \
+            --clobber \
+            --repo "${{ github.repository }}"
