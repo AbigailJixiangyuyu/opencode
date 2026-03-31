@@ -1,10 +1,13 @@
 ---
-model: opencode/gpt-5.4
+model: opencode/kimi-k2.5
 ---
 
 Create `UPCOMING_CHANGELOG.md` from the structured changelog input below.
 If `UPCOMING_CHANGELOG.md` already exists, ignore its current contents completely.
 Do not preserve, merge, or reuse text from the existing file.
+
+Any command arguments are passed directly to `bun script/changelog.ts`.
+Use `--from` / `-f` and `--to` / `-t` to preview a specific release range.
 
 The input already contains the exact commit range since the last non-draft release.
 The commits are already filtered to the release-relevant packages and grouped into
@@ -12,8 +15,8 @@ the release sections. Do not fetch GitHub releases, PRs, or build your own commi
 The input may also include a `## Community Contributors Input` section.
 
 Before writing any entry you keep, inspect the real diff with
-`git show --stat --format='' <hash>` or `git show --format='' <hash>` so you can
-understand the actual code changes and not just the commit message (they may be misleading).
+`git show --stat --format='' <hash>` or `git show --format='' <hash>` so the
+summary reflects the actual user-facing change and not just the commit message.
 Do not use `git log` or author metadata when deciding attribution.
 
 Rules:
@@ -35,12 +38,7 @@ Rules:
 - Do not add, remove, rewrite, or reorder contributor names or commit titles in that block
 - Do not derive the thank-you section from the main summary bullets
 - Do not include the heading `## Community Contributors Input` in the final file
-- Focus on writing the least words to get your point across - users will skim read the changelog, so we should be precise
 
-**Importantly, the changelog is for users (who are at least slightly technical), they may use the TUI, Desktop, SDK, Plugins and so forth. Be thorough in understanding flow on effects may not be immediately apparent. e.g. a package upgrade looks internal but may patch a bug. Or a refactor may also stabilise some race condition that fixes bugs for users. The PR title/body + commit message will give you the authors context, usually containing the outcome not just technical detail**
+## Changelog Input
 
-<changelog_input>
-
-!`bun script/raw-changelog.ts $ARGUMENTS`
-
-</changelog_input>
+!`bun script/changelog.ts $ARGUMENTS`

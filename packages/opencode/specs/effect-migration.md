@@ -210,13 +210,15 @@ Fully migrated (single namespace, InstanceState where needed, flattened facade):
 - [x] `Vcs` — `project/vcs.ts`
 - [x] `Worktree` — `worktree/index.ts`
 
-- [x] `Session` — `session/index.ts`
-- [x] `SessionProcessor` — `session/processor.ts`
-- [x] `SessionPrompt` — `session/prompt.ts`
-- [x] `SessionCompaction` — `session/compaction.ts`
-- [x] `Provider` — `provider/provider.ts`
+Still open and likely worth migrating:
 
-Still open:
+- [x] `Session` — `session/index.ts`
+- [ ] `SessionProcessor` — blocked by AI SDK v6 PR (#18433)
+- [ ] `SessionPrompt` — blocked by AI SDK v6 PR (#18433)
+- [ ] `SessionCompaction` — blocked by AI SDK v6 PR (#18433)
+- [ ] `Provider` — blocked by AI SDK v6 PR (#18433)
+
+Other services not yet migrated:
 
 - [ ] `SessionSummary` — `session/summary.ts`
 - [ ] `SessionTodo` — `session/todo.ts`
@@ -233,7 +235,7 @@ Once individual tools are effectified, change `Tool.Info` (`tool/tool.ts`) so `i
 
 1. Migrate each tool to return Effects
 2. Update `Tool.define()` factory to work with Effects
-3. Update `SessionPrompt` to `yield*` tool results instead of `await`ing
+3. Update `SessionPrompt` to `yield*` tool results instead of `await`ing — blocked by AI SDK v6 PR (#18433)
 
 Individual tools, ordered by value:
 
