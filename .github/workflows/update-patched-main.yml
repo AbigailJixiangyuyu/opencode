@@ -137,7 +137,10 @@ jobs:
           gh release create "${{ steps.patched_release.outputs.tag }}" \
             --repo "${{ github.repository }}" \
             --title "${{ steps.patched_release.outputs.tag }}" \
-            --notes "Patched from upstream ${{ steps.upstream_release.outputs.tag }}"
+            --notes "Patched from upstream ${{ steps.upstream_release.outputs.tag }}
+
+## Custom patches applied:
+- **Proxy support**: Added configurable proxy support for AI provider requests and Codex authentication. Configure via provider.options.proxy in opencode.json (e.g., { \"provider\": { \"openai\": { \"options\": { \"proxy\": \"http://127.0.0.1:7890\" } } } })"
 
       - name: Upload Windows x64 TUI release
         if: steps.check_done.outputs.done != 'true'
