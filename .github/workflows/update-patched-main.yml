@@ -89,7 +89,7 @@ jobs:
       - name: Cherry-pick Chinese patch commit
         if: steps.check_done.outputs.done != 'true'
         run: |
-          git cherry-pick 0e023b528
+          git cherry-pick 0e023b528 9e019abb47ac8955175a44e0072c6bb9f8bd2e3c
 
       - name: Mark processed upstream tag
         if: steps.check_done.outputs.done != 'true'

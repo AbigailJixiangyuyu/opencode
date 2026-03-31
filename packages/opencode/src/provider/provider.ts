@@ -1306,6 +1306,7 @@ export namespace Provider {
 
           const customFetch = options["fetch"]
           const chunkTimeout = options["chunkTimeout"]
+          const proxyUrl = options["proxy"]
           delete options["chunkTimeout"]
 
           options["fetch"] = async (input: any, init?: BunFetchRequestInit) => {
@@ -1338,11 +1339,14 @@ export namespace Provider {
               }
             }
 
-            const res = await fetchFn(input, {
+            const fetchOpts = {
               ...opts,
               // @ts-ignore see here: https://github.com/oven-sh/bun/issues/16682
               timeout: false,
-            })
+              ...(proxyUrl && { proxy: proxyUrl }),
+            }
+
+            const res = await fetchFn(input, fetchOpts)
 
             if (!chunkAbortCtl) return res
             return wrapSSE(res, chunkTimeout, chunkAbortCtl)
