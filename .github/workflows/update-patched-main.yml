@@ -112,16 +112,15 @@ jobs:
       - name: Apply custom patches
         if: steps.check_done.outputs.done != 'true'
         run: |
-          git fetch origin feat/provider-proxy-support fix/paste-preview-cjk-17032
+          git fetch origin fix/paste-preview-cjk-17032
 
-          PROXY=08c03d29d2c88838a627f00fb9dd3673fe01a168
+          PROXY=d95c9bf69af1c1ad6f0eac923d8b84b336c193a7
           CJK=0e023b5280108c8359a3639fb3502482d7187040
 
           if git show "$PROXY" -- packages/opencode/src/config/config.ts packages/opencode/src/plugin/codex.ts packages/opencode/src/plugin/index.ts packages/opencode/src/provider/provider.ts | git apply --check --reverse; then
             echo "Patch already applied in tree: $PROXY"
           else
-            git show "$PROXY" -- packages/opencode/src/config/config.ts packages/opencode/src/plugin/codex.ts packages/opencode/src/plugin/index.ts packages/opencode/src/provider/provider.ts | git apply --3way --index
-            git commit -m "chore: apply proxy patch $PROXY"
+            git cherry-pick -x "$PROXY"
           fi
 
           if git show "$CJK" -- packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx | git apply --check --reverse; then
@@ -133,7 +132,7 @@ jobs:
       - name: Verify custom patches
         if: steps.check_done.outputs.done != 'true'
         run: |
-          PROXY=08c03d29d2c88838a627f00fb9dd3673fe01a168
+          PROXY=d95c9bf69af1c1ad6f0eac923d8b84b336c193a7
           CJK=0e023b5280108c8359a3639fb3502482d7187040
 
           if git show "$PROXY" -- packages/opencode/src/config/config.ts packages/opencode/src/plugin/codex.ts packages/opencode/src/plugin/index.ts packages/opencode/src/provider/provider.ts | git apply --check --reverse; then
