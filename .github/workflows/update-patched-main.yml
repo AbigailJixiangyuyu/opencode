@@ -115,12 +115,25 @@ jobs:
           git fetch origin feat/provider-proxy-support fix/paste-preview-cjk-17032
 
           for SHA in 08c03d29d2c88838a627f00fb9dd3673fe01a168 0e023b5280108c8359a3639fb3502482d7187040; do
-            if git merge-base --is-ancestor "$SHA" HEAD; then
-              echo "Patch already present: $SHA"
+            if git show "$SHA" --pretty=format: --binary | git apply --check --reverse; then
+              echo "Patch already applied in tree: $SHA"
               continue
             fi
 
             git cherry-pick -x "$SHA"
+          done
+
+      - name: Verify custom patches
+        if: steps.check_done.outputs.done != 'true'
+        run: |
+          for SHA in 08c03d29d2c88838a627f00fb9dd3673fe01a168 0e023b5280108c8359a3639fb3502482d7187040; do
+            if git show "$SHA" --pretty=format: --binary | git apply --check --reverse; then
+              echo "Verified patch: $SHA"
+              continue
+            fi
+
+            echo "Missing patch: $SHA"
+            exit 1
           done
 
       - name: Mark processed upstream tag
@@ -165,7 +178,7 @@ jobs:
           gh release create "${{ steps.patched_release.outputs.tag }}" \
             --repo "${{ github.repository }}" \
             --title "${{ steps.patched_release.outputs.tag }}" \
-            --notes "Patched from upstream ${{ steps.upstream_release.outputs.tag }}\n\n## Custom patches applied:\n- **Proxy support**: Added configurable proxy support for AI provider requests and Codex authentication. Configure via provider.options.proxy in opencode.json"
+            --notes "Patched from upstream ${{ steps.upstream_release.outputs.tag }}  添加自定义代理 添加中文补丁"
 
       - name: Upload Windows x64 TUI release
         if: steps.check_done.outputs.done != 'true'
