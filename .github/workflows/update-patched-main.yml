@@ -112,10 +112,23 @@ jobs:
       - name: Apply custom patches
         if: steps.check_done.outputs.done != 'true'
         run: |
-          git fetch origin feat/provider-proxy-support-v1.3.9 fix/paste-preview-cjk-17032
+          PROXY_REF=feat/provider-proxy-support-v1.3.9
+          CJK_REF=fix/paste-preview-cjk-v1.3.9
+          git fetch origin "$PROXY_REF" "$CJK_REF"
 
-          PROXY=47d9a63a9d406f38ee9ec4fcf4d98d9038bdf3b3
-          CJK=0e023b5280108c8359a3639fb3502482d7187040
+          TAG=${{ steps.upstream_release.outputs.tag }}
+          PROXY=$(git rev-parse "origin/$PROXY_REF")
+          CJK=$(git rev-parse "origin/$CJK_REF")
+
+          if ! git merge-base --is-ancestor "$TAG" "$PROXY"; then
+            echo "Proxy patch is not based on upstream tag $TAG: $PROXY"
+            exit 1
+          fi
+
+          if ! git merge-base --is-ancestor "$TAG" "$CJK"; then
+            echo "CJK patch is not based on upstream tag $TAG: $CJK"
+            exit 1
+          fi
 
           if git show "$PROXY" -- packages/opencode/src/config/config.ts packages/opencode/src/plugin/codex.ts packages/opencode/src/plugin/index.ts packages/opencode/src/provider/provider.ts | git apply --check --reverse; then
             echo "Patch already applied in tree: $PROXY"
@@ -132,8 +145,8 @@ jobs:
       - name: Verify custom patches
         if: steps.check_done.outputs.done != 'true'
         run: |
-          PROXY=47d9a63a9d406f38ee9ec4fcf4d98d9038bdf3b3
-          CJK=0e023b5280108c8359a3639fb3502482d7187040
+          PROXY=$(git rev-parse origin/feat/provider-proxy-support-v1.3.9)
+          CJK=$(git rev-parse origin/fix/paste-preview-cjk-v1.3.9)
 
           if git show "$PROXY" -- packages/opencode/src/config/config.ts packages/opencode/src/plugin/codex.ts packages/opencode/src/plugin/index.ts packages/opencode/src/provider/provider.ts | git apply --check --reverse; then
             echo "Verified patch: $PROXY"
