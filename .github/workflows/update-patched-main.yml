@@ -98,6 +98,31 @@ jobs:
           rsync -a --delete --exclude '.git' --exclude '.github/workflows' "$TMP"/ "$GITHUB_WORKSPACE"/
           rm -rf "$TMP"
 
+      - name: Commit upstream sync
+        if: steps.check_done.outputs.done != 'true'
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No upstream file changes to commit"
+            exit 0
+          fi
+
+          git commit -m "chore: sync upstream ${{ steps.upstream_release.outputs.tag }} (exclude workflows)"
+
+      - name: Apply custom patches
+        if: steps.check_done.outputs.done != 'true'
+        run: |
+          git fetch origin feat/provider-proxy-support fix/paste-preview-cjk-17032
+
+          for SHA in 08c03d29d2c88838a627f00fb9dd3673fe01a168 0e023b5280108c8359a3639fb3502482d7187040; do
+            if git merge-base --is-ancestor "$SHA" HEAD; then
+              echo "Patch already present: $SHA"
+              continue
+            fi
+
+            git cherry-pick -x "$SHA"
+          done
+
       - name: Mark processed upstream tag
         if: steps.check_done.outputs.done != 'true'
         run: |
