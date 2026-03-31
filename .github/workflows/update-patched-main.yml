@@ -86,11 +86,6 @@ jobs:
         run: |
           git checkout -B patched-work ${{ steps.upstream_release.outputs.tag }}
 
-      - name: Cherry-pick Chinese patch commit
-        if: steps.check_done.outputs.done != 'true'
-        run: |
-          git cherry-pick 0e023b528 9e019abb47ac8955175a44e0072c6bb9f8bd2e3c
-
       - name: Mark processed upstream tag
         if: steps.check_done.outputs.done != 'true'
         run: |
@@ -142,7 +137,7 @@ jobs:
           gh release create "${{ steps.patched_release.outputs.tag }}" \
             --repo "${{ github.repository }}" \
             --title "${{ steps.patched_release.outputs.tag }}" \
-            --notes "Patched from upstream ${{ steps.upstream_release.outputs.tag }} with cherry-pick 0e023b528"
+            --notes "Patched from upstream ${{ steps.upstream_release.outputs.tag }}"
 
       - name: Upload Windows x64 TUI release
         if: steps.check_done.outputs.done != 'true'
