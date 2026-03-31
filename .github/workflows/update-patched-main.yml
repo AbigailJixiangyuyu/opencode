@@ -110,15 +110,6 @@ jobs:
         run: |
           bun run ./packages/opencode/script/build.ts
 
-      - name: Preserve workflow files from previous patched-main
-        if: steps.check_done.outputs.done != 'true'
-        run: |
-          if git rev-parse --verify origin/patched-main >/dev/null 2>&1; then
-            git checkout origin/patched-main -- .github/workflows || true
-            git add .github/workflows
-            git diff --cached --quiet || git commit -m "PRESERVE_WORKFLOWS_FROM_PATCHED_MAIN"
-          fi
-
       - name: Update patched-main
         if: steps.check_done.outputs.done != 'true'
         run: |
