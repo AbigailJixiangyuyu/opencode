@@ -81,10 +81,22 @@ jobs:
           git remote add upstream https://github.com/anomalyco/opencode.git || true
           git fetch upstream --tags
 
-      - name: Checkout upstream release tag
+      - name: Prepare patched worktree
         if: steps.check_done.outputs.done != 'true'
         run: |
-          git checkout -B patched-work ${{ steps.upstream_release.outputs.tag }}
+          if git rev-parse --verify origin/patched-main >/dev/null 2>&1; then
+            BASE=origin/patched-main
+          else
+            git fetch origin dev
+            BASE=origin/dev
+          fi
+
+          git checkout -B patched-work "$BASE"
+
+          TMP=$(mktemp -d)
+          git archive "${{ steps.upstream_release.outputs.tag }}" | tar -x -C "$TMP"
+          rsync -a --delete --exclude '.git' --exclude '.github/workflows' "$TMP"/ "$GITHUB_WORKSPACE"/
+          rm -rf "$TMP"
 
       - name: Mark processed upstream tag
         if: steps.check_done.outputs.done != 'true'
