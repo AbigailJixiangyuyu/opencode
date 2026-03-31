@@ -112,9 +112,9 @@ jobs:
       - name: Apply custom patches
         if: steps.check_done.outputs.done != 'true'
         run: |
-          git fetch origin fix/paste-preview-cjk-17032
+          git fetch origin feat/provider-proxy-support-v1.3.9 fix/paste-preview-cjk-17032
 
-          PROXY=d95c9bf69af1c1ad6f0eac923d8b84b336c193a7
+          PROXY=47d9a63a9d406f38ee9ec4fcf4d98d9038bdf3b3
           CJK=0e023b5280108c8359a3639fb3502482d7187040
 
           if git show "$PROXY" -- packages/opencode/src/config/config.ts packages/opencode/src/plugin/codex.ts packages/opencode/src/plugin/index.ts packages/opencode/src/provider/provider.ts | git apply --check --reverse; then
@@ -132,7 +132,7 @@ jobs:
       - name: Verify custom patches
         if: steps.check_done.outputs.done != 'true'
         run: |
-          PROXY=d95c9bf69af1c1ad6f0eac923d8b84b336c193a7
+          PROXY=47d9a63a9d406f38ee9ec4fcf4d98d9038bdf3b3
           CJK=0e023b5280108c8359a3639fb3502482d7187040
 
           if git show "$PROXY" -- packages/opencode/src/config/config.ts packages/opencode/src/plugin/codex.ts packages/opencode/src/plugin/index.ts packages/opencode/src/provider/provider.ts | git apply --check --reverse; then
