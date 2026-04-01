@@ -875,6 +875,7 @@ export namespace Config {
             .describe(
               "Timeout in milliseconds between streamed SSE chunks for this provider. If no chunk arrives within this window, the request is aborted.",
             ),
+          proxy: z.string().optional().describe("Proxy URL for this provider, e.g. http://127.0.0.1:7890"),
         })
         .catchall(z.any())
         .optional(),
