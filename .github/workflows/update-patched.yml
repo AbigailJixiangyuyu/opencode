@@ -125,22 +125,7 @@ jobs:
           fi
 
           if ! grep -q 'export function setOpenaiProxy' "$CODEX"; then
-            sed -i '/^const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000$/a\
-\
-let proxy: string | undefined\
-\
-export function setOpenaiProxy(url: string | undefined) {\
-  proxy = url\
-}\
-\
-async function proxiedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {\
-  const opts: RequestInit = init ? { ...init } : {}\
-  if (proxy) {\
-    // @ts-ignore Bun supports fetch proxy option\
-    opts.proxy = proxy\
-  }\
-  return fetch(input, opts)\
-}' "$CODEX"
+            perl -i -0pe 's|^const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000$|const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000\n\nlet proxy: string | undefined\n\nexport function setOpenaiProxy(url: string | undefined) {\n  proxy = url\n}\n\nasync function proxiedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {\n  const opts: RequestInit = init ? { ...init } : {}\n  if (proxy) {\n    // @ts-ignore Bun supports fetch proxy option\n    opts.proxy = proxy\n  }\n  return fetch(input, opts)\n}|m' "$CODEX"
           fi
 
           sed -i "s|await fetch(\`\${ISSUER}/oauth/token\`,|await proxiedFetch(\`\${ISSUER}/oauth/token\`,|g" "$CODEX"
