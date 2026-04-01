@@ -15,21 +15,6 @@ const CODEX_API_ENDPOINT = "https://chatgpt.com/backend-api/codex/responses"
 const OAUTH_PORT = 1455
 const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000
 
-let proxy: string | undefined
-
-export function setOpenaiProxy(url: string | undefined) {
-  proxy = url
-}
-
-async function proxiedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const opts: RequestInit = init ? { ...init } : {}
-  if (proxy) {
-    // @ts-ignore Bun supports fetch proxy option
-    opts.proxy = proxy
-  }
-  return fetch(input, opts)
-}
-
 interface PkceCodes {
   verifier: string
   challenge: string
@@ -126,7 +111,7 @@ interface TokenResponse {
 }
 
 async function exchangeCodeForTokens(code: string, redirectUri: string, pkce: PkceCodes): Promise<TokenResponse> {
-  const response = await proxiedFetch(`${ISSUER}/oauth/token`, {
+  const response = await fetch(`${ISSUER}/oauth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -144,7 +129,7 @@ async function exchangeCodeForTokens(code: string, redirectUri: string, pkce: Pk
 }
 
 async function refreshAccessToken(refreshToken: string): Promise<TokenResponse> {
-  const response = await proxiedFetch(`${ISSUER}/oauth/token`, {
+  const response = await fetch(`${ISSUER}/oauth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -390,38 +375,6 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
           delete provider.models[modelId]
         }
 
-        if (!provider.models["gpt-5.3-codex"]) {
-          const model = {
-            id: ModelID.make("gpt-5.3-codex"),
-            providerID: ProviderID.openai,
-            api: {
-              id: "gpt-5.3-codex",
-              url: "https://chatgpt.com/backend-api/codex",
-              npm: "@ai-sdk/openai",
-            },
-            name: "GPT-5.3 Codex",
-            capabilities: {
-              temperature: false,
-              reasoning: true,
-              attachment: true,
-              toolcall: true,
-              input: { text: true, audio: false, image: true, video: false, pdf: false },
-              output: { text: true, audio: false, image: false, video: false, pdf: false },
-              interleaved: false,
-            },
-            cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
-            limit: { context: 400_000, input: 272_000, output: 128_000 },
-            status: "active" as const,
-            options: {},
-            headers: {},
-            release_date: "2026-02-05",
-            variants: {} as Record<string, Record<string, any>>,
-            family: "gpt-codex",
-          }
-          model.variants = ProviderTransform.variants(model)
-          provider.models["gpt-5.3-codex"] = model
-        }
-
         // Zero out costs for Codex (included with ChatGPT subscription)
         for (const model of Object.values(provider.models)) {
           model.cost = {
@@ -548,7 +501,7 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
           label: "ChatGPT Pro/Plus (headless)",
           type: "oauth",
           authorize: async () => {
-            const deviceResponse = await proxiedFetch(`${ISSUER}/api/accounts/deviceauth/usercode`, {
+            const deviceResponse = await fetch(`${ISSUER}/api/accounts/deviceauth/usercode`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -572,7 +525,7 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
               method: "auto" as const,
               async callback() {
                 while (true) {
-                  const response = await proxiedFetch(`${ISSUER}/api/accounts/deviceauth/token`, {
+                  const response = await fetch(`${ISSUER}/api/accounts/deviceauth/token`, {
                     method: "POST",
                     headers: {
                       "Content-Type": "application/json",
@@ -590,7 +543,7 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
                       code_verifier: string
                     }
 
-                    const tokenResponse = await proxiedFetch(`${ISSUER}/oauth/token`, {
+                    const tokenResponse = await fetch(`${ISSUER}/oauth/token`, {
                       method: "POST",
                       headers: { "Content-Type": "application/x-www-form-urlencoded" },
                       body: new URLSearchParams({
