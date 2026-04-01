@@ -109,103 +109,51 @@ jobs:
 
           git commit -m "chore: sync upstream ${{ steps.upstream_release.outputs.tag }} (exclude workflows)"
 
-      - name: Apply proxy patch
+      - name: Apply custom patches
         if: steps.check_done.outputs.done != 'true'
         run: |
           set -e
 
-          CFG=packages/opencode/src/config/config.ts
-          CODEX=packages/opencode/src/plugin/codex.ts
-          INDEX=packages/opencode/src/plugin/index.ts
-          PROVIDER=packages/opencode/src/provider/provider.ts
+          PROXY_REF=feat/provider-proxy-support
+          CJK_REF=fix/paste-preview-cjk-17032
 
-          if ! grep -q 'Proxy URL for this provider' "$CFG"; then
-            sed -i '/chunkTimeout: z/,/".*Timeout in milliseconds between streamed SSE chunks/{ /".*Timeout in milliseconds between streamed SSE chunks/a\          proxy: z.string().optional().describe("Proxy URL for this provider, e.g. http://127.0.0.1:7890"),
-            }' "$CFG"
-          fi
+          git fetch origin "$PROXY_REF:refs/remotes/origin/$PROXY_REF" "$CJK_REF:refs/remotes/origin/$CJK_REF"
 
-          if ! grep -q 'export function setOpenaiProxy' "$CODEX"; then
-            python - "$CODEX" <<'PY'
-          import pathlib
-          import sys
-          import textwrap
+          PROXY=$(git rev-parse "origin/$PROXY_REF")
+          CJK=$(git rev-parse "origin/$CJK_REF")
 
-          path = pathlib.Path(sys.argv[1])
-          text = path.read_text()
-          marker = "const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000"
-          insert = textwrap.dedent('''
-          const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000
-
-          let proxy: string | undefined
-
-          export function setOpenaiProxy(url: string | undefined) {
-            proxy = url
-          }
-
-          async function proxiedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-            const opts: RequestInit = init ? { ...init } : {}
-            if (proxy) {
-              // @ts-ignore Bun supports fetch proxy option
-              opts.proxy = proxy
-            }
-            return fetch(input, opts)
-          }
-          ''').strip("\n")
-          path.write_text(text.replace(marker, insert, 1))
-          PY
-          fi
-
-          sed -i "s|await fetch(\`\${ISSUER}/oauth/token\`,|await proxiedFetch(\`\${ISSUER}/oauth/token\`,|g" "$CODEX"
-          sed -i "s|await fetch(\`\${ISSUER}/api/accounts/deviceauth/usercode\`,|await proxiedFetch(\`\${ISSUER}/api/accounts/deviceauth/usercode\`,|g" "$CODEX"
-          sed -i "s|await fetch(\`\${ISSUER}/api/accounts/deviceauth/token\`,|await proxiedFetch(\`\${ISSUER}/api/accounts/deviceauth/token\`,|g" "$CODEX"
-
-          sed -i 's|import { CodexAuthPlugin } from "./codex"|import { CodexAuthPlugin, setOpenaiProxy } from "./codex"|' "$INDEX"
-
-          if ! grep -q 'setOpenaiProxy(proxyUrl)' "$INDEX"; then
-            sed -i '/const cfg = yield\* config.get()/a\
-            const proxyUrl = cfg.provider?.openai?.options?.proxy\
-            setOpenaiProxy(proxyUrl)\
-            if (proxyUrl) {\
-              log.info("using openai proxy for codex auth", { proxy: proxyUrl })\
-            }' "$INDEX"
-          fi
-
-          if ! grep -q 'const proxy = options\["proxy"\]' "$PROVIDER"; then
-            sed -i '/const chunkTimeout = options\["chunkTimeout"\]/a\      const proxy = options["proxy"]' "$PROVIDER"
-          fi
-
-          if ! grep -q '\.\.\.(proxy && { proxy })' "$PROVIDER"; then
-            perl -i -0pe 's/(const res = await fetchFn\(input, \{\n\s*\.\.\.opts,\n\s*\/\/ \@ts-ignore[^\n]*\n\s*timeout: false,\n\s*\}\))/const fetchOpts = {\n              ...opts,\n              \/\/ @ts-ignore see here: https:\/\/github.com\/oven-sh\/bun\/issues\/16682\n              timeout: false,\n              ...(proxy \&\& { proxy }),\n            }\n\n            const res = await fetchFn(input, fetchOpts)/' "$PROVIDER"
-          fi
-
-          git add -A
-          if git diff --cached --quiet; then
-            echo "No proxy changes to commit"
+          if git show "$PROXY" -- packages/opencode/src/config/config.ts packages/opencode/src/plugin/codex.ts packages/opencode/src/plugin/index.ts packages/opencode/src/provider/provider.ts | git apply --check --reverse; then
+            echo "Proxy patch already applied"
           else
-            git commit -m "feat: add provider proxy support"
+            git cherry-pick -x "$PROXY"
           fi
 
-      - name: Apply CJK patch
-        if: steps.check_done.outputs.done != 'true'
-        run: |
-          set -e
-          git fetch origin fix/paste-preview-cjk-17032
-          CJK=$(git rev-parse origin/fix/paste-preview-cjk-17032)
           if git show "$CJK" -- packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx | git apply --check --reverse; then
             echo "CJK patch already applied"
           else
-            git show "$CJK" -- packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx | git apply --3way --index
-            git commit -m "fix(tui): correct pasted preview replacement for CJK"
+            git cherry-pick -x "$CJK"
           fi
 
       - name: Verify custom patches
         if: steps.check_done.outputs.done != 'true'
         run: |
-          grep -q 'Proxy URL for this provider' packages/opencode/src/config/config.ts || { echo "Missing proxy config"; exit 1; }
-          grep -q 'proxiedFetch' packages/opencode/src/plugin/codex.ts || { echo "Missing proxiedFetch"; exit 1; }
-          grep -q 'setOpenaiProxy' packages/opencode/src/plugin/index.ts || { echo "Missing setOpenaiProxy"; exit 1; }
-          grep -q 'const proxy = options\["proxy"\]' packages/opencode/src/provider/provider.ts || { echo "Missing proxy in provider"; exit 1; }
-          grep -q 'toIndex' packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx || { echo "Missing CJK fix"; exit 1; }
+          PROXY=$(git rev-parse origin/feat/provider-proxy-support)
+          CJK=$(git rev-parse origin/fix/paste-preview-cjk-17032)
+
+          if git show "$PROXY" -- packages/opencode/src/config/config.ts packages/opencode/src/plugin/codex.ts packages/opencode/src/plugin/index.ts packages/opencode/src/provider/provider.ts | git apply --check --reverse; then
+            echo "Verified proxy patch"
+          else
+            echo "Missing proxy patch"
+            exit 1
+          fi
+
+          if git show "$CJK" -- packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx | git apply --check --reverse; then
+            echo "Verified CJK patch"
+          else
+            echo "Missing CJK patch"
+            exit 1
+          fi
+
           echo "All patches verified"
 
       - name: Mark processed upstream tag
