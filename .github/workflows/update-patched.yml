@@ -114,43 +114,25 @@ jobs:
         run: |
           set -e
 
-          PROXY_REF=feat/provider-proxy-support
-          CJK_REF=fix/paste-preview-cjk-17032
+          PATCH_REF=feat/provider-cjk-combined-v1.3.13
+          git fetch origin "$PATCH_REF:refs/remotes/origin/$PATCH_REF"
+          PATCH=$(git rev-parse "origin/$PATCH_REF")
 
-          git fetch origin "$PROXY_REF:refs/remotes/origin/$PROXY_REF" "$CJK_REF:refs/remotes/origin/$CJK_REF"
-
-          PROXY=$(git rev-parse "origin/$PROXY_REF")
-          CJK=$(git rev-parse "origin/$CJK_REF")
-
-          if git show "$PROXY" -- packages/opencode/src/config/config.ts packages/opencode/src/plugin/codex.ts packages/opencode/src/plugin/index.ts packages/opencode/src/provider/provider.ts | git apply --check --reverse; then
-            echo "Proxy patch already applied"
+          if git show "$PATCH" -- packages/opencode/src/config/config.ts packages/opencode/src/plugin/codex.ts packages/opencode/src/plugin/index.ts packages/opencode/src/provider/provider.ts packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx | git apply --check --reverse; then
+            echo "Combined patch already applied"
           else
-            git cherry-pick -x "$PROXY"
-          fi
-
-          if git show "$CJK" -- packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx | git apply --check --reverse; then
-            echo "CJK patch already applied"
-          else
-            git cherry-pick -x "$CJK"
+            git cherry-pick -x "$PATCH"
           fi
 
       - name: Verify custom patches
         if: steps.check_done.outputs.done != 'true'
         run: |
-          PROXY=$(git rev-parse origin/feat/provider-proxy-support)
-          CJK=$(git rev-parse origin/fix/paste-preview-cjk-17032)
+          PATCH=$(git rev-parse origin/feat/provider-cjk-combined-v1.3.13)
 
-          if git show "$PROXY" -- packages/opencode/src/config/config.ts packages/opencode/src/plugin/codex.ts packages/opencode/src/plugin/index.ts packages/opencode/src/provider/provider.ts | git apply --check --reverse; then
-            echo "Verified proxy patch"
+          if git show "$PATCH" -- packages/opencode/src/config/config.ts packages/opencode/src/plugin/codex.ts packages/opencode/src/plugin/index.ts packages/opencode/src/provider/provider.ts packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx | git apply --check --reverse; then
+            echo "Verified combined patch"
           else
-            echo "Missing proxy patch"
-            exit 1
-          fi
-
-          if git show "$CJK" -- packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx | git apply --check --reverse; then
-            echo "Verified CJK patch"
-          else
-            echo "Missing CJK patch"
+            echo "Missing combined patch"
             exit 1
           fi
 
