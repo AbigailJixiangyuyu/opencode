@@ -1,0 +1,207 @@
+name: Update patched-main from upstream release
+
+on:
+  schedule:
+    - cron: "0 0 */2 * *"
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: "Rebuild and republish current upstream tag"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  update-patched-main:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout current repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set git identity
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Get latest upstream release tag
+        id: upstream_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(gh release view --repo anomalyco/opencode --json tagName -q .tagName)
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Latest upstream tag: $TAG"
+
+      - name: Compute patched release tag
+        id: patched_release
+        run: |
+          BASE="${{ steps.upstream_release.outputs.tag }}"
+          VER="${BASE#v}-patched"
+          TAG="v${VER}"
+          echo "version=$VER" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Patched release tag: $TAG"
+
+      - name: Check current processed tag
+        id: check_done
+        run: |
+          if [ "${{ inputs.force_rebuild }}" = "true" ]; then
+            echo "force_rebuild=true, processing current upstream tag"
+            echo "done=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          git fetch origin patched-main || true
+
+          LAST_TAG=""
+          if git rev-parse --verify origin/patched-main >/dev/null 2>&1; then
+            LAST_TAG=$(git log origin/patched-main --grep='^UPSTREAM_TAG=' -n 1 --pretty=%B | sed -n 's/^UPSTREAM_TAG=//p' | head -n 1)
+          fi
+
+          echo "Last processed tag: $LAST_TAG"
+          if [ "$LAST_TAG" = "${{ steps.upstream_release.outputs.tag }}" ]; then
+            echo "done=true" >> $GITHUB_OUTPUT
+          else
+            echo "done=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Stop if already processed
+        if: steps.check_done.outputs.done == 'true'
+        run: echo "patched-main is already up to date."
+
+      - name: Add upstream remote
+        if: steps.check_done.outputs.done != 'true'
+        run: |
+          git remote add upstream https://github.com/anomalyco/opencode.git || true
+          git fetch upstream --tags
+
+      - name: Prepare patched worktree
+        if: steps.check_done.outputs.done != 'true'
+        run: |
+          if git rev-parse --verify origin/patched-main >/dev/null 2>&1; then
+            BASE=origin/patched-main
+          else
+            git fetch origin dev
+            BASE=origin/dev
+          fi
+
+          git checkout -B patched-work "$BASE"
+
+          TMP=$(mktemp -d)
+          git archive "${{ steps.upstream_release.outputs.tag }}" | tar -x -C "$TMP"
+          rsync -a --delete --exclude '.git' --exclude '.github/workflows' "$TMP"/ "$GITHUB_WORKSPACE"/
+          rm -rf "$TMP"
+
+      - name: Commit upstream sync
+        if: steps.check_done.outputs.done != 'true'
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No upstream file changes to commit"
+            exit 0
+          fi
+
+          git commit -m "chore: sync upstream ${{ steps.upstream_release.outputs.tag }} (exclude workflows)"
+
+      - name: Apply custom patches
+        if: steps.check_done.outputs.done != 'true'
+        run: |
+          set -e
+
+          PATCH_REF=feat/provider-cjk-combined-v1.3.13
+          git fetch origin "$PATCH_REF:refs/remotes/origin/$PATCH_REF"
+          PATCH=$(git rev-parse "origin/$PATCH_REF")
+
+          if git show "$PATCH" -- packages/opencode/src/config/config.ts packages/opencode/src/plugin/codex.ts packages/opencode/src/plugin/index.ts packages/opencode/src/provider/provider.ts packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx | git apply --check --reverse; then
+            echo "Combined patch already applied"
+          else
+            git cherry-pick -x "$PATCH"
+          fi
+
+      - name: Verify custom patches
+        if: steps.check_done.outputs.done != 'true'
+        run: |
+          PATCH=$(git rev-parse origin/feat/provider-cjk-combined-v1.3.13)
+
+          if git show "$PATCH" -- packages/opencode/src/config/config.ts packages/opencode/src/plugin/codex.ts packages/opencode/src/plugin/index.ts packages/opencode/src/provider/provider.ts packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx | git apply --check --reverse; then
+            echo "Verified combined patch"
+          else
+            echo "Missing combined patch"
+            exit 1
+          fi
+
+          echo "All patches verified"
+
+      - name: Mark processed upstream tag
+        if: steps.check_done.outputs.done != 'true'
+        run: |
+          git commit --allow-empty -m "UPSTREAM_TAG=${{ steps.upstream_release.outputs.tag }}"
+
+      - name: Setup Bun
+        if: steps.check_done.outputs.done != 'true'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        if: steps.check_done.outputs.done != 'true'
+        run: |
+          bun install
+
+      - name: Build CLI artifacts
+        if: steps.check_done.outputs.done != 'true'
+        env:
+          OPENCODE_CHANNEL: latest
+          OPENCODE_VERSION: ${{ steps.patched_release.outputs.version }}
+        run: |
+          bun run ./packages/opencode/script/build.ts
+
+      - name: Update patched-main
+        if: steps.check_done.outputs.done != 'true'
+        run: |
+          git branch -f patched-main
+          git push origin patched-main --force
+
+      - name: Ensure patched release exists
+        if: steps.check_done.outputs.done != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ steps.patched_release.outputs.tag }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release already exists: ${{ steps.patched_release.outputs.tag }}"
+            exit 0
+          fi
+          gh release create "${{ steps.patched_release.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --title "${{ steps.patched_release.outputs.tag }}" \
+            --notes "Patched from upstream ${{ steps.upstream_release.outputs.tag }}  添加自定义代理 添加中文补丁"
+
+      - name: Upload Windows x64 TUI release
+        if: steps.check_done.outputs.done != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd packages/opencode/dist/opencode-windows-x64/bin
+          zip -r ../../opencode-windows-x64-${{ steps.patched_release.outputs.version }}.zip .
+          gh release upload "${{ steps.patched_release.outputs.tag }}" \
+            "$GITHUB_WORKSPACE/packages/opencode/dist/opencode-windows-x64-${{ steps.patched_release.outputs.version }}.zip" \
+            --clobber \
+            --repo "${{ github.repository }}"
+
+      - name: Upload Linux x64 TUI release
+        if: steps.check_done.outputs.done != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd packages/opencode/dist/opencode-linux-x64/bin
+          tar -czf ../../opencode-linux-x64-${{ steps.patched_release.outputs.version }}.tar.gz .
+          gh release upload "${{ steps.patched_release.outputs.tag }}" \
+            "$GITHUB_WORKSPACE/packages/opencode/dist/opencode-linux-x64-${{ steps.patched_release.outputs.version }}.tar.gz" \
+            --clobber \
+            --repo "${{ github.repository }}"
