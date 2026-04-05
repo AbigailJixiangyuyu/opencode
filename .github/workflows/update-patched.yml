@@ -180,7 +180,24 @@ jobs:
           gh release create "${{ steps.patched_release.outputs.tag }}" \
             --repo "${{ github.repository }}" \
             --title "${{ steps.patched_release.outputs.tag }}" \
-            --notes "Patched from upstream ${{ steps.upstream_release.outputs.tag }}  添加自定义代理 添加中文补丁"
+            --notes "Patched from upstream ${{ steps.upstream_release.outputs.tag }}
+
+## 自定义补丁
+
+### OpenAI 代理支持
+在 provider 配置中添加 proxy 字段，支持通过 HTTP 代理访问 OpenAI/Codex 服务。所有 Codex OAuth 流程（token 交换、刷新、设备码认证）和 provider API 请求均走代理。
+\`\`\`json
+{\"provider\":{\"openai\":{\"options\":{\"proxy\":\"http://127.0.0.1:7890\"}}}}
+\`\`\`
+
+### CJK/多宽度字符输入修复
+修复 TUI 输入框中粘贴预览和内联替换时对中文等双宽度字符的处理。用 Bun.stringWidth() 替代 string.length 计算视觉列宽，解决光标定位和文本替换错位。
+
+### 隐藏斜杠命令
+支持通过配置隐藏不需要的 / 命令，使其不出现在自动补全菜单中。
+\`\`\`json
+{\"experimental\":{\"disabled_slash_commands\":[\"share\",\"themes\",\"fork\"]}}
+\`\`\`"
 
       - name: Upload Windows x64 TUI release
         if: steps.check_done.outputs.done != 'true'
