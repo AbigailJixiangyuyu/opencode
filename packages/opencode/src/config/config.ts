@@ -835,6 +835,7 @@ export namespace Config {
             .describe(
               "Timeout in milliseconds between streamed SSE chunks for this provider. If no chunk arrives within this window, the request is aborted.",
             ),
+          proxy: z.string().optional().describe("Proxy URL for this provider, e.g. http://127.0.0.1:7890"),
         })
         .catchall(z.any())
         .optional(),
@@ -1034,6 +1035,10 @@ export namespace Config {
             .positive()
             .optional()
             .describe("Timeout in milliseconds for model context protocol (MCP) requests"),
+          disabled_slash_commands: z
+            .array(z.string())
+            .optional()
+            .describe('Slash command names to hide from the / autocomplete menu, e.g. ["share", "themes"]'),
         })
         .optional(),
     })
