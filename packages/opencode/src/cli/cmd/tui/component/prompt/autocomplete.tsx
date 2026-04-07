@@ -357,14 +357,10 @@ export function Autocomplete(props: {
   })
 
   const commands = createMemo((): AutocompleteOption[] => {
-    const disabled = new Set(sync.data.config.experimental?.disabled_slash_commands ?? [])
-    const results: AutocompleteOption[] = [...command.slashes()].filter(
-      (cmd) => !disabled.has(cmd.display.replace(/^\//, "")),
-    )
+    const results: AutocompleteOption[] = [...command.slashes()]
 
     for (const serverCommand of sync.data.command) {
       if (serverCommand.source === "skill") continue
-      if (disabled.has(serverCommand.name)) continue
       const label = serverCommand.source === "mcp" ? ":mcp" : ""
       results.push({
         display: "/" + serverCommand.name + label,

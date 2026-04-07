@@ -18,7 +18,7 @@ import { usePromptStash } from "./stash"
 import { DialogStash } from "../dialog-stash"
 import { type AutocompleteRef, Autocomplete } from "./autocomplete"
 import { useCommandDialog } from "../dialog-command"
-import { useKeyboard, useRenderer, type JSX } from "@opentui/solid"
+import { useRenderer, type JSX } from "@opentui/solid"
 import { Editor } from "@tui/util/editor"
 import { useExit } from "../../context/exit"
 import { Clipboard } from "../../util/clipboard"
@@ -35,6 +35,7 @@ import { useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv"
 import { useTextareaKeybindings } from "../textarea-keybindings"
 import { DialogSkill } from "../dialog-skill"
+import { CONSOLE_MANAGED_ICON, consoleManagedProviderLabel } from "@tui/util/provider-origin"
 
 export type PromptProps = {
   sessionID?: string
@@ -94,6 +95,15 @@ export function Prompt(props: PromptProps) {
   const list = createMemo(() => props.placeholders?.normal ?? [])
   const shell = createMemo(() => props.placeholders?.shell ?? [])
   const [auto, setAuto] = createSignal<AutocompleteRef>()
+  const activeOrgName = createMemo(() => sync.data.console_state.activeOrgName)
+  const canSwitchOrgs = createMemo(() => sync.data.console_state.switchableOrgCount > 1)
+  const currentProviderLabel = createMemo(() => {
+    const current = local.model.current()
+    const provider = local.model.parsed().provider
+    if (!current) return provider
+    return consoleManagedProviderLabel(sync.data.console_state.consoleManagedProviders, current.providerID, provider)
+  })
+  const hasRightContent = createMemo(() => Boolean(props.right || activeOrgName()))
 
   function promptModelWarning() {
     toast.show({
@@ -112,27 +122,6 @@ export function Prompt(props: PromptProps) {
   const agentStyleId = syntax().getStyleId("extmark.agent")!
   const pasteStyleId = syntax().getStyleId("extmark.paste")!
   let promptPartTypeId = 0
-
-  function toIndex(text: string, col: number) {
-    if (col <= 0) return 0
-    let width = 0
-    let idx = 0
-
-    for (const ch of text) {
-      if (width >= col) return idx
-      width += Bun.stringWidth(ch)
-      idx += ch.length
-      if (width >= col) return idx
-    }
-
-    return text.length
-  }
-
-  function replace(text: string, start: number, end: number, value: string) {
-    const from = toIndex(text, start)
-    const to = toIndex(text, end)
-    return text.slice(0, from) + value + text.slice(to)
-  }
 
   sdk.event.on(TuiEvent.PromptAppend.type, (evt) => {
     if (!input || input.isDestroyed) return
@@ -411,20 +400,6 @@ export function Prompt(props: PromptProps) {
     ]
   })
 
-  // Windows Terminal 1.25+ handles Ctrl+V on keydown when kitty events are
-  // enabled, but still reports the kitty key-release event. Probe on release.
-  if (process.platform === "win32") {
-    useKeyboard(
-      (evt) => {
-        if (!input.focused) return
-        if (evt.name === "v" && evt.ctrl && evt.eventType === "release") {
-          command.trigger("prompt.paste")
-        }
-      },
-      { release: true },
-    )
-  }
-
   const ref: PromptRef = {
     get focused() {
       return input.focused
@@ -663,7 +638,9 @@ export function Prompt(props: PromptProps) {
       if (partIndex !== undefined) {
         const part = store.prompt.parts[partIndex]
         if (part?.type === "text" && part.text) {
-          inputText = replace(inputText, extmark.start, extmark.end, part.text)
+          const before = inputText.slice(0, extmark.start)
+          const after = inputText.slice(extmark.end)
+          inputText = before + part.text + after
         }
       }
     }
@@ -763,7 +740,7 @@ export function Prompt(props: PromptProps) {
   function pasteText(text: string, virtualText: string) {
     const currentOffset = input.visualCursor.offset
     const extmarkStart = currentOffset
-    const extmarkEnd = extmarkStart + Bun.stringWidth(virtualText)
+    const extmarkEnd = extmarkStart + virtualText.length
 
     input.insertText(virtualText + " ")
 
@@ -799,7 +776,7 @@ export function Prompt(props: PromptProps) {
     const extmarkStart = currentOffset
     const count = store.prompt.parts.filter((x) => x.type === "file" && x.mime.startsWith("image/")).length
     const virtualText = `[Image ${count + 1}]`
-    const extmarkEnd = extmarkStart + Bun.stringWidth(virtualText)
+    const extmarkEnd = extmarkStart + virtualText.length
     const textToInsert = virtualText + " "
 
     input.insertText(textToInsert)
@@ -1114,7 +1091,7 @@ export function Prompt(props: PromptProps) {
                     <text flexShrink={0} fg={keybind.leader ? theme.textMuted : theme.text}>
                       {local.model.parsed().model}
                     </text>
-                    <text fg={theme.textMuted}>{local.model.parsed().provider}</text>
+                    <text fg={theme.textMuted}>{currentProviderLabel()}</text>
                     <Show when={showVariant()}>
                       <text fg={theme.textMuted}>·</text>
                       <text>
@@ -1124,7 +1101,22 @@ export function Prompt(props: PromptProps) {
                   </box>
                 </Show>
               </box>
-              {props.right}
+              <Show when={hasRightContent()}>
+                <box flexDirection="row" gap={1} alignItems="center">
+                  {props.right}
+                  <Show when={activeOrgName()}>
+                    <text
+                      fg={theme.textMuted}
+                      onMouseUp={() => {
+                        if (!canSwitchOrgs()) return
+                        command.trigger("console.org.switch")
+                      }}
+                    >
+                      {`${CONSOLE_MANAGED_ICON} ${activeOrgName()}`}
+                    </text>
+                  </Show>
+                </box>
+              </Show>
             </box>
           </box>
         </box>
