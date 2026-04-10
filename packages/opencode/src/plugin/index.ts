@@ -4,7 +4,7 @@ import { Bus } from "../bus"
 import { Log } from "../util/log"
 import { createOpencodeClient } from "@opencode-ai/sdk"
 import { Flag } from "../flag/flag"
-import { CodexAuthPlugin, setOpenaiProxy } from "./codex"
+import { CodexAuthPlugin } from "./codex"
 import { Session } from "../session"
 import { NamedError } from "@opencode-ai/util/error"
 import { CopilotAuthPlugin } from "./github-copilot/copilot"
@@ -119,14 +119,9 @@ export namespace Plugin {
                   Authorization: `Basic ${Buffer.from(`${Flag.OPENCODE_SERVER_USERNAME ?? "opencode"}:${Flag.OPENCODE_SERVER_PASSWORD}`).toString("base64")}`,
                 }
               : undefined,
-            fetch: async (...args) => Server.Default().fetch(...args),
+            fetch: async (...args) => Server.Default().app.fetch(...args),
           })
           const cfg = yield* config.get()
-          const proxy = cfg.provider?.openai?.options?.proxy
-          setOpenaiProxy(proxy)
-          if (proxy) {
-            log.info("using openai proxy for codex auth", { proxy })
-          }
           const input: PluginInput = {
             client,
             project: ctx.project,
@@ -135,7 +130,8 @@ export namespace Plugin {
             get serverUrl(): URL {
               return Server.url ?? new URL("http://localhost:4096")
             },
-            $: Bun.$,
+            // @ts-expect-error
+            $: typeof Bun === "undefined" ? undefined : Bun.$,
           }
 
           for (const plugin of INTERNAL_PLUGINS) {

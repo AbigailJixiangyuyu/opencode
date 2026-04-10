@@ -6,6 +6,7 @@ import os from "os"
 import { ProviderTransform } from "@/provider/transform"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { setTimeout as sleep } from "node:timers/promises"
+import { createServer } from "http"
 
 const log = Log.create({ service: "plugin.codex" })
 
@@ -14,21 +15,6 @@ const ISSUER = "https://auth.openai.com"
 const CODEX_API_ENDPOINT = "https://chatgpt.com/backend-api/codex/responses"
 const OAUTH_PORT = 1455
 const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000
-
-let proxy: string | undefined
-
-export function setOpenaiProxy(url: string | undefined) {
-  proxy = url
-}
-
-async function proxiedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const opts: RequestInit = init ? { ...init } : {}
-  if (proxy) {
-    // @ts-ignore Bun supports fetch proxy option
-    opts.proxy = proxy
-  }
-  return fetch(input, opts)
-}
 
 interface PkceCodes {
   verifier: string
@@ -126,7 +112,7 @@ interface TokenResponse {
 }
 
 async function exchangeCodeForTokens(code: string, redirectUri: string, pkce: PkceCodes): Promise<TokenResponse> {
-  const response = await proxiedFetch(`${ISSUER}/oauth/token`, {
+  const response = await fetch(`${ISSUER}/oauth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -144,7 +130,7 @@ async function exchangeCodeForTokens(code: string, redirectUri: string, pkce: Pk
 }
 
 async function refreshAccessToken(refreshToken: string): Promise<TokenResponse> {
-  const response = await proxiedFetch(`${ISSUER}/oauth/token`, {
+  const response = await fetch(`${ISSUER}/oauth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -256,7 +242,7 @@ interface PendingOAuth {
   reject: (error: Error) => void
 }
 
-let oauthServer: ReturnType<typeof Bun.serve> | undefined
+let oauthServer: ReturnType<typeof createServer> | undefined
 let pendingOAuth: PendingOAuth | undefined
 
 async function startOAuthServer(): Promise<{ port: number; redirectUri: string }> {
@@ -264,77 +250,83 @@ async function startOAuthServer(): Promise<{ port: number; redirectUri: string }
     return { port: OAUTH_PORT, redirectUri: `http://localhost:${OAUTH_PORT}/auth/callback` }
   }
 
-  oauthServer = Bun.serve({
-    port: OAUTH_PORT,
-    fetch(req) {
-      const url = new URL(req.url)
+  oauthServer = createServer((req, res) => {
+    const url = new URL(req.url || "/", `http://localhost:${OAUTH_PORT}`)
 
-      if (url.pathname === "/auth/callback") {
-        const code = url.searchParams.get("code")
-        const state = url.searchParams.get("state")
-        const error = url.searchParams.get("error")
-        const errorDescription = url.searchParams.get("error_description")
+    if (url.pathname === "/auth/callback") {
+      const code = url.searchParams.get("code")
+      const state = url.searchParams.get("state")
+      const error = url.searchParams.get("error")
+      const errorDescription = url.searchParams.get("error_description")
 
-        if (error) {
-          const errorMsg = errorDescription || error
-          pendingOAuth?.reject(new Error(errorMsg))
-          pendingOAuth = undefined
-          return new Response(HTML_ERROR(errorMsg), {
-            headers: { "Content-Type": "text/html" },
-          })
-        }
-
-        if (!code) {
-          const errorMsg = "Missing authorization code"
-          pendingOAuth?.reject(new Error(errorMsg))
-          pendingOAuth = undefined
-          return new Response(HTML_ERROR(errorMsg), {
-            status: 400,
-            headers: { "Content-Type": "text/html" },
-          })
-        }
-
-        if (!pendingOAuth || state !== pendingOAuth.state) {
-          const errorMsg = "Invalid state - potential CSRF attack"
-          pendingOAuth?.reject(new Error(errorMsg))
-          pendingOAuth = undefined
-          return new Response(HTML_ERROR(errorMsg), {
-            status: 400,
-            headers: { "Content-Type": "text/html" },
-          })
-        }
-
-        const current = pendingOAuth
+      if (error) {
+        const errorMsg = errorDescription || error
+        pendingOAuth?.reject(new Error(errorMsg))
         pendingOAuth = undefined
-
-        exchangeCodeForTokens(code, `http://localhost:${OAUTH_PORT}/auth/callback`, current.pkce)
-          .then((tokens) => current.resolve(tokens))
-          .catch((err) => current.reject(err))
-
-        return new Response(HTML_SUCCESS, {
-          headers: { "Content-Type": "text/html" },
-        })
+        res.writeHead(200, { "Content-Type": "text/html" })
+        res.end(HTML_ERROR(errorMsg))
+        return
       }
 
-      if (url.pathname === "/cancel") {
-        pendingOAuth?.reject(new Error("Login cancelled"))
+      if (!code) {
+        const errorMsg = "Missing authorization code"
+        pendingOAuth?.reject(new Error(errorMsg))
         pendingOAuth = undefined
-        return new Response("Login cancelled", { status: 200 })
+        res.writeHead(400, { "Content-Type": "text/html" })
+        res.end(HTML_ERROR(errorMsg))
+        return
       }
 
-      return new Response("Not found", { status: 404 })
-    },
+      if (!pendingOAuth || state !== pendingOAuth.state) {
+        const errorMsg = "Invalid state - potential CSRF attack"
+        pendingOAuth?.reject(new Error(errorMsg))
+        pendingOAuth = undefined
+        res.writeHead(400, { "Content-Type": "text/html" })
+        res.end(HTML_ERROR(errorMsg))
+        return
+      }
+
+      const current = pendingOAuth
+      pendingOAuth = undefined
+
+      exchangeCodeForTokens(code, `http://localhost:${OAUTH_PORT}/auth/callback`, current.pkce)
+        .then((tokens) => current.resolve(tokens))
+        .catch((err) => current.reject(err))
+
+      res.writeHead(200, { "Content-Type": "text/html" })
+      res.end(HTML_SUCCESS)
+      return
+    }
+
+    if (url.pathname === "/cancel") {
+      pendingOAuth?.reject(new Error("Login cancelled"))
+      pendingOAuth = undefined
+      res.writeHead(200)
+      res.end("Login cancelled")
+      return
+    }
+
+    res.writeHead(404)
+    res.end("Not found")
   })
 
-  log.info("codex oauth server started", { port: OAUTH_PORT })
+  await new Promise<void>((resolve, reject) => {
+    oauthServer!.listen(OAUTH_PORT, () => {
+      log.info("codex oauth server started", { port: OAUTH_PORT })
+      resolve()
+    })
+    oauthServer!.on("error", reject)
+  })
+
   return { port: OAUTH_PORT, redirectUri: `http://localhost:${OAUTH_PORT}/auth/callback` }
 }
 
 function stopOAuthServer() {
   if (oauthServer) {
-    oauthServer.stop()
+    oauthServer.close(() => {
+      log.info("codex oauth server stopped")
+    })
     oauthServer = undefined
-    log.info("codex oauth server stopped")
   }
 }
 
@@ -384,9 +376,9 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
           "gpt-5.4",
           "gpt-5.4-mini",
         ])
-        for (const modelId of Object.keys(provider.models)) {
+        for (const [modelId, model] of Object.entries(provider.models)) {
           if (modelId.includes("codex")) continue
-          if (allowedModels.has(modelId)) continue
+          if (allowedModels.has(model.api.id)) continue
           delete provider.models[modelId]
         }
 
@@ -516,7 +508,7 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
           label: "ChatGPT Pro/Plus (headless)",
           type: "oauth",
           authorize: async () => {
-            const deviceResponse = await proxiedFetch(`${ISSUER}/api/accounts/deviceauth/usercode`, {
+            const deviceResponse = await fetch(`${ISSUER}/api/accounts/deviceauth/usercode`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -540,7 +532,7 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
               method: "auto" as const,
               async callback() {
                 while (true) {
-                  const response = await proxiedFetch(`${ISSUER}/api/accounts/deviceauth/token`, {
+                  const response = await fetch(`${ISSUER}/api/accounts/deviceauth/token`, {
                     method: "POST",
                     headers: {
                       "Content-Type": "application/json",
@@ -558,7 +550,7 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
                       code_verifier: string
                     }
 
-                    const tokenResponse = await proxiedFetch(`${ISSUER}/oauth/token`, {
+                    const tokenResponse = await fetch(`${ISSUER}/oauth/token`, {
                       method: "POST",
                       headers: { "Content-Type": "application/x-www-form-urlencoded" },
                       body: new URLSearchParams({
@@ -606,6 +598,11 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
       output.headers.originator = "opencode"
       output.headers["User-Agent"] = `opencode/${Installation.VERSION} (${os.platform()} ${os.release()}; ${os.arch()})`
       output.headers.session_id = input.sessionID
+    },
+    "chat.params": async (input, output) => {
+      if (input.model.providerID !== "openai") return
+      // Match codex cli
+      output.maxOutputTokens = undefined
     },
   }
 }

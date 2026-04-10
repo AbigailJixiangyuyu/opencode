@@ -399,6 +399,10 @@ export namespace Config {
         .describe("OAuth client ID. If not provided, dynamic client registration (RFC 7591) will be attempted."),
       clientSecret: z.string().optional().describe("OAuth client secret (if required by the authorization server)"),
       scope: z.string().optional().describe("OAuth scopes to request during authorization"),
+      redirectUri: z
+        .string()
+        .optional()
+        .describe("OAuth redirect URI (default: http://127.0.0.1:19876/mcp/oauth/callback)."),
     })
     .strict()
     .meta({
@@ -669,6 +673,7 @@ export namespace Config {
       agent_cycle: z.string().optional().default("tab").describe("Next agent"),
       agent_cycle_reverse: z.string().optional().default("shift+tab").describe("Previous agent"),
       variant_cycle: z.string().optional().default("ctrl+t").describe("Cycle model variants"),
+      variant_list: z.string().optional().default("none").describe("List model variants"),
       input_clear: z.string().optional().default("ctrl+c").describe("Clear input field"),
       input_paste: z.string().optional().default("ctrl+v").describe("Paste from clipboard"),
       input_submit: z.string().optional().default("return").describe("Submit input"),
@@ -785,28 +790,81 @@ export namespace Config {
   })
   export type Layout = z.infer<typeof Layout>
 
-  export const Provider = ModelsDev.Provider.partial()
-    .extend({
-      whitelist: z.array(z.string()).optional(),
-      blacklist: z.array(z.string()).optional(),
-      models: z
+  export const Model = z
+    .object({
+      id: z.string(),
+      name: z.string(),
+      family: z.string().optional(),
+      release_date: z.string(),
+      attachment: z.boolean(),
+      reasoning: z.boolean(),
+      temperature: z.boolean(),
+      tool_call: z.boolean(),
+      interleaved: z
+        .union([
+          z.literal(true),
+          z
+            .object({
+              field: z.enum(["reasoning_content", "reasoning_details"]),
+            })
+            .strict(),
+        ])
+        .optional(),
+      cost: z
+        .object({
+          input: z.number(),
+          output: z.number(),
+          cache_read: z.number().optional(),
+          cache_write: z.number().optional(),
+          context_over_200k: z
+            .object({
+              input: z.number(),
+              output: z.number(),
+              cache_read: z.number().optional(),
+              cache_write: z.number().optional(),
+            })
+            .optional(),
+        })
+        .optional(),
+      limit: z.object({
+        context: z.number(),
+        input: z.number().optional(),
+        output: z.number(),
+      }),
+      modalities: z
+        .object({
+          input: z.array(z.enum(["text", "audio", "image", "video", "pdf"])),
+          output: z.array(z.enum(["text", "audio", "image", "video", "pdf"])),
+        })
+        .optional(),
+      experimental: z.boolean().optional(),
+      status: z.enum(["alpha", "beta", "deprecated"]).optional(),
+      provider: z.object({ npm: z.string().optional(), api: z.string().optional() }).optional(),
+      options: z.record(z.string(), z.any()),
+      headers: z.record(z.string(), z.string()).optional(),
+      variants: z
         .record(
           z.string(),
-          ModelsDev.Model.partial().extend({
-            variants: z
-              .record(
-                z.string(),
-                z
-                  .object({
-                    disabled: z.boolean().optional().describe("Disable this variant for the model"),
-                  })
-                  .catchall(z.any()),
-              )
-              .optional()
-              .describe("Variant-specific configuration"),
-          }),
+          z
+            .object({
+              disabled: z.boolean().optional().describe("Disable this variant for the model"),
+            })
+            .catchall(z.any()),
         )
-        .optional(),
+        .optional()
+        .describe("Variant-specific configuration"),
+    })
+    .partial()
+
+  export const Provider = z
+    .object({
+      api: z.string().optional(),
+      name: z.string(),
+      env: z.array(z.string()),
+      id: z.string(),
+      npm: z.string().optional(),
+      whitelist: z.array(z.string()).optional(),
+      blacklist: z.array(z.string()).optional(),
       options: z
         .object({
           apiKey: z.string().optional(),
@@ -836,15 +894,17 @@ export namespace Config {
             .describe(
               "Timeout in milliseconds between streamed SSE chunks for this provider. If no chunk arrives within this window, the request is aborted.",
             ),
-          proxy: z.string().optional().describe("Proxy URL for this provider, e.g. http://127.0.0.1:7890"),
         })
         .catchall(z.any())
         .optional(),
+      models: z.record(z.string(), Model).optional(),
     })
+    .partial()
     .strict()
     .meta({
       ref: "ProviderConfig",
     })
+
   export type Provider = z.infer<typeof Provider>
 
   export const Info = z
@@ -1036,10 +1096,6 @@ export namespace Config {
             .positive()
             .optional()
             .describe("Timeout in milliseconds for model context protocol (MCP) requests"),
-          disabled_slash_commands: z
-            .array(z.string())
-            .optional()
-            .describe('Slash command names to hide from the / autocomplete menu, e.g. ["share", "themes"]'),
         })
         .optional(),
     })
