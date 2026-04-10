@@ -114,7 +114,7 @@ jobs:
         run: |
           set -e
 
-          PATCH_REF=feat/provider-cjk-combined-v1.3.15
+          PATCH_REF=feat/provider-cjk-combined-v1.4.3
           git fetch origin "$PATCH_REF:refs/remotes/origin/$PATCH_REF"
           PATCH=$(git rev-parse "origin/$PATCH_REF")
 
@@ -127,7 +127,7 @@ jobs:
       - name: Verify custom patches
         if: steps.check_done.outputs.done != 'true'
         run: |
-          PATCH=$(git rev-parse origin/feat/provider-cjk-combined-v1.3.15)
+          PATCH=$(git rev-parse origin/feat/provider-cjk-combined-v1.4.3)
 
           if git show "$PATCH" -- packages/opencode/src/config/config.ts packages/opencode/src/plugin/codex.ts packages/opencode/src/plugin/index.ts packages/opencode/src/provider/provider.ts packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx | git apply --check --reverse; then
             echo "Verified combined patch"
