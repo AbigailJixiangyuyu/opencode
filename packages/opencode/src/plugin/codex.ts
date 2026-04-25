@@ -1,10 +1,9 @@
 import type { Hooks, PluginInput } from "@opencode-ai/plugin"
-import { Log } from "../util/log"
+import { Log } from "../util"
 import { Installation } from "../installation"
-import { Auth, OAUTH_DUMMY_KEY } from "../auth"
+import { InstallationVersion } from "../installation/version"
+import { OAUTH_DUMMY_KEY } from "../auth"
 import os from "os"
-import { ProviderTransform } from "@/provider/transform"
-import { ModelID, ProviderID } from "@/provider/schema"
 import { setTimeout as sleep } from "node:timers/promises"
 import { createServer } from "http"
 
@@ -15,21 +14,6 @@ const ISSUER = "https://auth.openai.com"
 const CODEX_API_ENDPOINT = "https://chatgpt.com/backend-api/codex/responses"
 const OAUTH_PORT = 1455
 const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000
-
-let proxy: string | undefined
-
-export function setOpenaiProxy(url: string | undefined) {
-  proxy = url
-}
-
-async function proxiedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const opts: RequestInit = init ? { ...init } : {}
-  if (proxy) {
-    // @ts-ignore Bun supports fetch proxy option
-    opts.proxy = proxy
-  }
-  return fetch(input, opts)
-}
 
 interface PkceCodes {
   verifier: string
@@ -127,7 +111,7 @@ interface TokenResponse {
 }
 
 async function exchangeCodeForTokens(code: string, redirectUri: string, pkce: PkceCodes): Promise<TokenResponse> {
-  const response = await proxiedFetch(`${ISSUER}/oauth/token`, {
+  const response = await fetch(`${ISSUER}/oauth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -145,7 +129,7 @@ async function exchangeCodeForTokens(code: string, redirectUri: string, pkce: Pk
 }
 
 async function refreshAccessToken(refreshToken: string): Promise<TokenResponse> {
-  const response = await proxiedFetch(`${ISSUER}/oauth/token`, {
+  const response = await fetch(`${ISSUER}/oauth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -394,6 +378,8 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
         for (const [modelId, model] of Object.entries(provider.models)) {
           if (modelId.includes("codex")) continue
           if (allowedModels.has(model.api.id)) continue
+          const match = model.api.id.match(/^gpt-(\d+\.\d+)/)
+          if (match && parseFloat(match[1]) > 5.4) continue
           delete provider.models[modelId]
         }
 
@@ -523,11 +509,11 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
           label: "ChatGPT Pro/Plus (headless)",
           type: "oauth",
           authorize: async () => {
-            const deviceResponse = await proxiedFetch(`${ISSUER}/api/accounts/deviceauth/usercode`, {
+            const deviceResponse = await fetch(`${ISSUER}/api/accounts/deviceauth/usercode`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
-                "User-Agent": `opencode/${Installation.VERSION}`,
+                "User-Agent": `opencode/${InstallationVersion}`,
               },
               body: JSON.stringify({ client_id: CLIENT_ID }),
             })
@@ -547,11 +533,11 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
               method: "auto" as const,
               async callback() {
                 while (true) {
-                  const response = await proxiedFetch(`${ISSUER}/api/accounts/deviceauth/token`, {
+                  const response = await fetch(`${ISSUER}/api/accounts/deviceauth/token`, {
                     method: "POST",
                     headers: {
                       "Content-Type": "application/json",
-                      "User-Agent": `opencode/${Installation.VERSION}`,
+                      "User-Agent": `opencode/${InstallationVersion}`,
                     },
                     body: JSON.stringify({
                       device_auth_id: deviceData.device_auth_id,
@@ -565,7 +551,7 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
                       code_verifier: string
                     }
 
-                    const tokenResponse = await proxiedFetch(`${ISSUER}/oauth/token`, {
+                    const tokenResponse = await fetch(`${ISSUER}/oauth/token`, {
                       method: "POST",
                       headers: { "Content-Type": "application/x-www-form-urlencoded" },
                       body: new URLSearchParams({
@@ -611,7 +597,7 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
     "chat.headers": async (input, output) => {
       if (input.model.providerID !== "openai") return
       output.headers.originator = "opencode"
-      output.headers["User-Agent"] = `opencode/${Installation.VERSION} (${os.platform()} ${os.release()}; ${os.arch()})`
+      output.headers["User-Agent"] = `opencode/${InstallationVersion} (${os.platform()} ${os.release()}; ${os.arch()})`
       output.headers.session_id = input.sessionID
     },
     "chat.params": async (input, output) => {
