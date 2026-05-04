@@ -21,25 +21,25 @@ export const Model = Schema.Struct({
   ),
   cost: Schema.optional(
     Schema.Struct({
-      input: Schema.Number,
-      output: Schema.Number,
-      cache_read: Schema.optional(Schema.Number),
-      cache_write: Schema.optional(Schema.Number),
+      input: Schema.Finite,
+      output: Schema.Finite,
+      cache_read: Schema.optional(Schema.Finite),
+      cache_write: Schema.optional(Schema.Finite),
       context_over_200k: Schema.optional(
         Schema.Struct({
-          input: Schema.Number,
-          output: Schema.Number,
-          cache_read: Schema.optional(Schema.Number),
-          cache_write: Schema.optional(Schema.Number),
+          input: Schema.Finite,
+          output: Schema.Finite,
+          cache_read: Schema.optional(Schema.Finite),
+          cache_write: Schema.optional(Schema.Finite),
         }),
       ),
     }),
   ),
   limit: Schema.optional(
     Schema.Struct({
-      context: Schema.Number,
-      input: Schema.optional(Schema.Number),
-      output: Schema.Number,
+      context: Schema.Finite,
+      input: Schema.optional(Schema.Finite),
+      output: Schema.Finite,
     }),
   ),
   modalities: Schema.optional(
@@ -99,9 +99,6 @@ export const Info = Schema.Struct({
         chunkTimeout: Schema.optional(PositiveInt).annotate({
           description:
             "Timeout in milliseconds between streamed SSE chunks for this provider. If no chunk arrives within this window, the request is aborted.",
-        }),
-        proxy: Schema.optional(Schema.String).annotate({
-          description: "Proxy URL for this provider, e.g. http://127.0.0.1:7890",
         }),
       }),
       [Schema.Record(Schema.String, Schema.Any)],
