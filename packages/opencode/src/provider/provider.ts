@@ -1469,6 +1469,7 @@ const layer: Layer.Layer<
 
         const customFetch = options["fetch"]
         const chunkTimeout = options["chunkTimeout"]
+        const proxy = options["proxy"]
         delete options["chunkTimeout"]
 
         options["fetch"] = async (input: any, init?: BunFetchRequestInit) => {
@@ -1507,6 +1508,7 @@ const layer: Layer.Layer<
             ...opts,
             // @ts-ignore see here: https://github.com/oven-sh/bun/issues/16682
             timeout: false,
+            ...(proxy && { proxy }),
           })
 
           if (!chunkAbortCtl) return res
