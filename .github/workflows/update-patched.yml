@@ -42,7 +42,7 @@ jobs:
         id: patched_release
         run: |
           BASE="${{ steps.upstream_release.outputs.tag }}"
-          VER="${BASE#v}-patched"
+          VER="${BASE#v}"
           TAG="v${VER}"
           echo "version=$VER" >> $GITHUB_OUTPUT
           echo "tag=$TAG" >> $GITHUB_OUTPUT
