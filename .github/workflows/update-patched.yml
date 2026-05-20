@@ -79,7 +79,7 @@ jobs:
         if: steps.check_done.outputs.done != 'true'
         run: |
           git remote add upstream https://github.com/anomalyco/opencode.git || true
-          git fetch upstream --tags
+          git fetch upstream --tags --force
 
       - name: Prepare patched worktree
         if: steps.check_done.outputs.done != 'true'
