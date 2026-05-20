@@ -310,19 +310,6 @@ export function Prompt(props: PromptProps) {
   let promptPartTypeId = 0
   const event = useEvent()
 
-  function toIndex(text: string, visualOffset: number): number {
-    let width = 0
-    for (let i = 0; i < text.length; i++) {
-      if (width >= visualOffset) return i
-      width += Bun.stringWidth(text[i])
-    }
-    return text.length
-  }
-
-  function replace(text: string, start: number, end: number, replacement: string): string {
-    return text.slice(0, start) + replacement + text.slice(end)
-  }
-
   event.on(TuiEvent.PromptAppend.type, (evt) => {
     if (!input || input.isDestroyed) return
     input.insertText(evt.properties.text)
@@ -980,12 +967,12 @@ export function Prompt(props: PromptProps) {
           title: "Next prompt history",
           category: "Prompt",
           run() {
-            if (input.cursorOffset !== Bun.stringWidth(input.plainText)) {
+            if (input.cursorOffset !== input.plainText.length) {
               if (
                 input.scrollY + input.visualCursor.visualRow ===
                 Math.max(0, input.editorView.getTotalVirtualLineCount() - 1)
               )
-                input.cursorOffset = Bun.stringWidth(input.plainText)
+                input.cursorOffset = input.plainText.length
               return false
             }
 
@@ -995,7 +982,7 @@ export function Prompt(props: PromptProps) {
             setStore("prompt", item)
             setStore("mode", item.mode ?? "normal")
             restoreExtmarksFromParts(item.parts)
-            input.cursorOffset = Bun.stringWidth(input.plainText)
+            input.cursorOffset = input.plainText.length
           },
         },
       ],

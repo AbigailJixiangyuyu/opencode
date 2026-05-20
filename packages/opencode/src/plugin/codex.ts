@@ -23,22 +23,6 @@ const ALLOWED_MODELS = new Set([
   "gpt-5.4-mini",
 ])
 
-let _proxyUrl: string | undefined
-export function setOpenaiProxy(url: string | undefined) {
-  _proxyUrl = url
-}
-function proxiedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  if (_proxyUrl) {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
-    const actualUrl = new URL(url)
-    const proxyUrl = new URL(_proxyUrl)
-    actualUrl.protocol = proxyUrl.protocol
-    actualUrl.host = proxyUrl.host
-    return fetch(new Request(actualUrl, init))
-  }
-  return fetch(input, init)
-}
-
 interface PkceCodes {
   verifier: string
   challenge: string
@@ -135,7 +119,7 @@ interface TokenResponse {
 }
 
 async function exchangeCodeForTokens(code: string, redirectUri: string, pkce: PkceCodes): Promise<TokenResponse> {
-  const response = await proxiedFetch(`${ISSUER}/oauth/token`, {
+  const response = await fetch(`${ISSUER}/oauth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -153,7 +137,7 @@ async function exchangeCodeForTokens(code: string, redirectUri: string, pkce: Pk
 }
 
 async function refreshAccessToken(refreshToken: string): Promise<TokenResponse> {
-  const response = await proxiedFetch(`${ISSUER}/oauth/token`, {
+  const response = await fetch(`${ISSUER}/oauth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -538,7 +522,7 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
           label: "ChatGPT Pro/Plus (headless)",
           type: "oauth",
           authorize: async () => {
-            const deviceResponse = await proxiedFetch(`${ISSUER}/api/accounts/deviceauth/usercode`, {
+            const deviceResponse = await fetch(`${ISSUER}/api/accounts/deviceauth/usercode`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -562,7 +546,7 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
               method: "auto" as const,
               async callback() {
                 while (true) {
-                  const response = await proxiedFetch(`${ISSUER}/api/accounts/deviceauth/token`, {
+                  const response = await fetch(`${ISSUER}/api/accounts/deviceauth/token`, {
                     method: "POST",
                     headers: {
                       "Content-Type": "application/json",
@@ -580,7 +564,7 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
                       code_verifier: string
                     }
 
-                    const tokenResponse = await proxiedFetch(`${ISSUER}/oauth/token`, {
+                    const tokenResponse = await fetch(`${ISSUER}/oauth/token`, {
                       method: "POST",
                       headers: { "Content-Type": "application/x-www-form-urlencoded" },
                       body: new URLSearchParams({
