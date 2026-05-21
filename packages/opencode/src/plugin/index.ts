@@ -10,7 +10,7 @@ import { Bus } from "../bus"
 import * as Log from "@opencode-ai/core/util/log"
 import { createOpencodeClient } from "@opencode-ai/sdk"
 import { ServerAuth } from "@/server/auth"
-import { CodexAuthPlugin, setOpenaiProxy } from "./codex"
+import { CodexAuthPlugin } from "./codex"
 import { Session } from "@/session/session"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { CopilotAuthPlugin } from "./github-copilot/copilot"
@@ -132,7 +132,6 @@ export const layer = Layer.effect(
           fetch: async (...args) => Server.Default().app.fetch(...args),
         })
         const cfg = yield* config.get()
-        setOpenaiProxy(cfg.provider?.openai?.options?.proxy)
         const input: PluginInput = {
           client,
           project: ctx.project,

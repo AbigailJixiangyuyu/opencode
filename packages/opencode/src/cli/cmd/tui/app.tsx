@@ -20,6 +20,7 @@ import {
 } from "solid-js"
 import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
 import { Flag } from "@opencode-ai/core/flag/flag"
+import semver from "semver"
 import { DialogProvider, useDialog } from "@tui/ui/dialog"
 import { DialogProvider as DialogProviderList } from "@tui/component/dialog-provider"
 import { ErrorComponent } from "@tui/component/error-component"
@@ -48,6 +49,7 @@ import { PromptHistoryProvider } from "./component/prompt/history"
 import { FrecencyProvider } from "./component/prompt/frecency"
 import { PromptStashProvider } from "./component/prompt/stash"
 import { DialogAlert } from "./ui/dialog-alert"
+import { DialogConfirm } from "./ui/dialog-confirm"
 import { ToastProvider, useToast } from "./ui/toast"
 import { ExitProvider, useExit } from "./context/exit"
 import { Session as SessionApi } from "@/session/session"
@@ -64,8 +66,15 @@ import { createTuiApi } from "@/cli/cmd/tui/plugin/api"
 import type { RouteMap } from "@/cli/cmd/tui/plugin/api"
 import { createTuiAttention } from "@/cli/cmd/tui/attention"
 import { FormatError, FormatUnknownError } from "@/cli/error"
-import { CommandPaletteProvider, useCommandPalette } from "./context/command-palette"
-import { OpencodeKeymapProvider, registerOpencodeKeymap, useBindings, useOpencodeKeymap } from "./keymap"
+import { CommandPaletteDialog } from "./component/command-palette"
+import {
+  COMMAND_PALETTE_COMMAND,
+  OPENCODE_BASE_MODE,
+  OpencodeKeymapProvider,
+  registerOpencodeKeymap,
+  useBindings,
+  useOpencodeKeymap,
+} from "./keymap"
 
 import type { EventSource } from "./context/sdk"
 import { DialogVariant } from "./component/dialog-variant"
@@ -225,17 +234,15 @@ export function tui(input: {
                                   <LocalProvider>
                                     <PromptStashProvider>
                                       <DialogProvider>
-                                        <CommandPaletteProvider>
-                                          <FrecencyProvider>
-                                            <PromptHistoryProvider>
-                                              <PromptRefProvider>
-                                                <EditorContextProvider>
-                                                  <App onSnapshot={input.onSnapshot} />
-                                                </EditorContextProvider>
-                                              </PromptRefProvider>
-                                            </PromptHistoryProvider>
-                                          </FrecencyProvider>
-                                        </CommandPaletteProvider>
+                                        <FrecencyProvider>
+                                          <PromptHistoryProvider>
+                                            <PromptRefProvider>
+                                              <EditorContextProvider>
+                                                <App onSnapshot={input.onSnapshot} />
+                                              </EditorContextProvider>
+                                            </PromptRefProvider>
+                                          </PromptHistoryProvider>
+                                        </FrecencyProvider>
                                       </DialogProvider>
                                     </PromptStashProvider>
                                   </LocalProvider>
@@ -265,7 +272,6 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   const dialog = useDialog()
   const local = useLocal()
   const kv = useKV()
-  const command = useCommandPalette()
   const keymap = useOpencodeKeymap()
   const event = useEvent()
   const sdk = useSDK()
@@ -444,12 +450,12 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   const appCommands = createMemo(() =>
     [
       {
-        name: "command.palette.show",
+        name: COMMAND_PALETTE_COMMAND,
         title: "Show command palette",
         category: "System",
         hidden: true,
         run: () => {
-          command.show()
+          dialog.replace(() => <CommandPaletteDialog />)
         },
       },
       {
@@ -799,14 +805,13 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   }))
 
   useBindings(() => ({
-    enabled: command.matcher,
+    mode: OPENCODE_BASE_MODE,
     bindings: tuiConfig.keybinds.gather("app", appBindingCommands),
   }))
 
   useBindings(() => ({
+    mode: OPENCODE_BASE_MODE,
     enabled: () => {
-      const ok = command.matcher.get()
-      if (!ok) return false
       const current = promptRef.current
       if (!current?.focused) return true
       return current.current.input === ""
@@ -815,7 +820,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   }))
 
   event.on(TuiEvent.CommandExecute.type, (evt) => {
-    command.run(evt.properties.command)
+    keymap.dispatchCommand(evt.properties.command)
   })
 
   event.on(TuiEvent.ToastShow.type, (evt) => {
@@ -854,6 +859,54 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       message,
       duration: 5000,
     })
+  })
+
+  event.on("installation.update-available", async (evt) => {
+    console.log("installation.update-available", evt)
+    const version = evt.properties.version
+
+    const skipped = kv.get("skipped_version")
+    if (skipped && !semver.gt(version, skipped)) return
+
+    const choice = await DialogConfirm.show(
+      dialog,
+      `Update Available`,
+      `A new release v${version} is available. Would you like to update now?`,
+      "skip",
+    )
+
+    if (choice === false) {
+      kv.set("skipped_version", version)
+      return
+    }
+
+    if (choice !== true) return
+
+    toast.show({
+      variant: "info",
+      message: `Updating to v${version}...`,
+      duration: 30000,
+    })
+
+    const result = await sdk.client.global.upgrade({ target: version })
+
+    if (result.error || !result.data?.success) {
+      toast.show({
+        variant: "error",
+        title: "Update Failed",
+        message: "Update failed",
+        duration: 10000,
+      })
+      return
+    }
+
+    await DialogAlert.show(
+      dialog,
+      "Update Complete",
+      `Successfully updated to OpenCode v${result.data.version}. Please restart the application.`,
+    )
+
+    void exit()
   })
 
   const plugin = createMemo(() => {
