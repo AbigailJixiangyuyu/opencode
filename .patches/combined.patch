@@ -1,0 +1,270 @@
+packages/opencode/src/cli/cmd/tui/app.tsx          | 50 ----------------------
+ .../src/cli/cmd/tui/component/prompt/index.tsx     | 19 ++++++--
+ packages/opencode/src/config/provider.ts           |  3 ++
+ packages/opencode/src/plugin/codex.ts              | 26 ++++++++---
+ packages/opencode/src/plugin/index.ts              |  3 +-
+ packages/opencode/src/provider/provider.ts         | 11 +++++
+ packages/opencode/src/session/prompt/default.txt   | 43 +------------------
+ 7 files changed, 54 insertions(+), 101 deletions(-)
+
+--- Changes ---
+
+packages/opencode/src/cli/cmd/tui/app.tsx
+  @@ -20,7 +20,6 @@ import {
+  -import semver from "semver"
+   import { DialogProvider, useDialog } from "@tui/ui/dialog"
+   import { DialogProvider as DialogProviderList } from "@tui/component/dialog-provider"
+   import { ErrorComponent } from "@tui/component/error-component"
+  @@ -49,7 +48,6 @@ import { PromptHistoryProvider } from "./component/prompt/history"
+  -import { DialogConfirm } from "./ui/dialog-confirm"
+   import { ToastProvider, useToast } from "./ui/toast"
+   import { ExitProvider, useExit } from "./context/exit"
+   import { Session as SessionApi } from "@/session/session"
+  @@ -858,54 +856,6 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
+  -  event.on("installation.update-available", async (evt) => {
+  -    console.log("installation.update-available", evt)
+  -    const version = evt.properties.version
+  -
+  -    const skipped = kv.get("skipped_version")
+  -    if (skipped && !semver.gt(version, skipped)) return
+  -
+  -    const choice = await DialogConfirm.show(
+  -      dialog,
+  -      `Update Available`,
+  -      `A new release v${version} is available. Would you like to update now?`,
+  -      "skip",
+  -    )
+  -
+  -    if (choice === false) {
+  -      kv.set("skipped_version", version)
+  -      return
+  -    }
+  -
+  -    if (choice !== true) return
+  -
+  -    toast.show({
+  -      variant: "info",
+  -      message: `Updating to v${version}...`,
+  -      duration: 30000,
+  -    })
+  -
+  -    const result = await sdk.client.global.upgrade({ target: version })
+  -
+  -    if (result.error || !result.data?.success) {
+  -      toast.show({
+  -        variant: "error",
+  -        title: "Update Failed",
+  -        message: "Update failed",
+  -        duration: 10000,
+  -      })
+  -      return
+  -    }
+  -
+  -    await DialogAlert.show(
+  -      dialog,
+  -      "Update Complete",
+  -      `Successfully updated to OpenCode v${result.data.version}. Please restart the application.`,
+  -    )
+  -
+  -    void exit()
+  -  })
+  -
+     const plugin = createMemo(() => {
+       if (!ready()) return
+       if (route.data.type !== "plugin") return
+  +0 -50
+
+packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx
+  @@ -310,6 +310,19 @@ export function Prompt(props: PromptProps) {
+  +  function toIndex(text: string, visualOffset: number): number {
+  +    let width = 0
+  +    for (let i = 0; i < text.length; i++) {
+  +      if (width >= visualOffset) return i
+  +      width += Bun.stringWidth(text[i])
+  +    }
+  +    return text.length
+  +  }
+  +
+  +  function replace(text: string, start: number, end: number, replacement: string): string {
+  +    return text.slice(0, start) + replacement + text.slice(end)
+  +  }
+  +
+     event.on(TuiEvent.PromptAppend.type, (evt) => {
+       if (!input || input.isDestroyed) return
+       input.insertText(evt.properties.text)
+  @@ -967,12 +980,12 @@ export function Prompt(props: PromptProps) {
+  -            if (input.cursorOffset !== input.plainText.length) {
+  +            if (input.cursorOffset !== Bun.stringWidth(input.plainText)) {
+                 if (
+                   input.scrollY + input.visualCursor.visualRow ===
+                   Math.max(0, input.editorView.getTotalVirtualLineCount() - 1)
+                 )
+  -                input.cursorOffset = input.plainText.length
+  +                input.cursorOffset = Bun.stringWidth(input.plainText)
+                 return false
+               }
+   
+  @@ -982,7 +995,7 @@ export function Prompt(props: PromptProps) {
+  -            input.cursorOffset = input.plainText.length
+  +            input.cursorOffset = Bun.stringWidth(input.plainText)
+             },
+           },
+         ],
+  +16 -3
+
+packages/opencode/src/config/provider.ts
+  @@ -100,6 +100,9 @@ export const Info = Schema.Struct({
+  +        proxy: Schema.optional(Schema.String).annotate({
+  +          description: "HTTPS proxy URL for this provider (e.g. http://127.0.0.1:7890)",
+  +        }),
+         }),
+         [Schema.Record(Schema.String, Schema.Any)],
+       ),
+  +3 -0
+
+packages/opencode/src/plugin/codex.ts
+  @@ -23,6 +23,22 @@ const ALLOWED_MODELS = new Set([
+  +let _proxyUrl: string | undefined
+  +export function setOpenaiProxy(url: string | undefined) {
+  +  _proxyUrl = url
+  +}
+  +function proxiedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  +  if (_proxyUrl) {
+  +    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+  +    const actualUrl = new URL(url)
+  +    const proxyUrl = new URL(_proxyUrl)
+  +    actualUrl.protocol = proxyUrl.protocol
+  +    actualUrl.host = proxyUrl.host
+  +    return fetch(new Request(actualUrl, init))
+  +  }
+  +  return fetch(input, init)
+  +}
+  +
+   interface PkceCodes {
+     verifier: string
+     challenge: string
+  @@ -119,7 +135,7 @@ interface TokenResponse {
+  -  const response = await fetch(`${ISSUER}/oauth/token`, {
+  +  const response = await proxiedFetch(`${ISSUER}/oauth/token`, {
+       method: "POST",
+       headers: { "Content-Type": "application/x-www-form-urlencoded" },
+       body: new URLSearchParams({
+  @@ -137,7 +153,7 @@ async function exchangeCodeForTokens(code: string, redirectUri: string, pkce: Pk
+  -  const response = await fetch(`${ISSUER}/oauth/token`, {
+  +  const response = await proxiedFetch(`${ISSUER}/oauth/token`, {
+       method: "POST",
+       headers: { "Content-Type": "application/x-www-form-urlencoded" },
+       body: new URLSearchParams({
+  @@ -522,7 +538,7 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
+  -            const deviceResponse = await fetch(`${ISSUER}/api/accounts/deviceauth/usercode`, {
+  +            const deviceResponse = await proxiedFetch(`${ISSUER}/api/accounts/deviceauth/usercode`, {
+                 method: "POST",
+                 headers: {
+                   "Content-Type": "application/json",
+  @@ -546,7 +562,7 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
+  -                  const response = await fetch(`${ISSUER}/api/accounts/deviceauth/token`, {
+  +                  const response = await proxiedFetch(`${ISSUER}/api/accounts/deviceauth/token`, {
+                       method: "POST",
+                       headers: {
+                         "Content-Type": "application/json",
+  @@ -564,7 +580,7 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
+  -                    const tokenResponse = await fetch(`${ISSUER}/oauth/token`, {
+  +                    const tokenResponse = await proxiedFetch(`${ISSUER}/oauth/token`, {
+                         method: "POST",
+                         headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                         body: new URLSearchParams({
+  +21 -5
+
+packages/opencode/src/plugin/index.ts
+  @@ -10,7 +10,7 @@ import { Bus } from "../bus"
+  -import { CodexAuthPlugin } from "./codex"
+  +import { CodexAuthPlugin, setOpenaiProxy } from "./codex"
+   import { Session } from "@/session/session"
+   import { NamedError } from "@opencode-ai/core/util/error"
+   import { CopilotAuthPlugin } from "./github-copilot/copilot"
+  @@ -132,6 +132,7 @@ export const layer = Layer.effect(
+  +        setOpenaiProxy(cfg.provider?.openai?.options?.proxy)
+           const input: PluginInput = {
+             client,
+             project: ctx.project,
+  +2 -1
+
+packages/opencode/src/provider/provider.ts
+  @@ -1563,6 +1563,8 @@ export const layer = Layer.effect(
+  +        const proxyUrl = options["proxy"]
+  +        delete options["proxy"]
+   
+           options["fetch"] = async (input: any, init?: BunFetchRequestInit) => {
+             const fetchFn = customFetch ?? fetch
+  @@ -1578,6 +1580,15 @@ export const layer = Layer.effect(
+  +          if (proxyUrl) {
+  +            const urlStr = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+  +            const actualUrl = new URL(urlStr)
+  +            const pUrl = new URL(proxyUrl)
+  +            actualUrl.protocol = pUrl.protocol
+  +            actualUrl.host = pUrl.host
+  +            input = new Request(actualUrl, opts)
+  +          }
+  +
+             // Strip openai itemId metadata following what codex does
+             if (
+               (model.api.npm === "@ai-sdk/openai" || model.api.npm === "@ai-sdk/azure") &&
+  +11 -0
+
+packages/opencode/src/session/prompt/default.txt
+  @@ -2,10 +2,6 @@ You are opencode, an interactive CLI tool that helps users with software enginee
+  -If the user asks for help or wants to give feedback inform them of the following:
+  -- /help: Get help with using opencode
+  -- To give feedback, users should report the issue at https://github.com/anomalyco/opencode/issues
+  -
+   When the user directly asks about opencode (eg 'can opencode do...', 'does opencode have...') or asks in second person (eg 'are you able...', 'can you do...'), first use the WebFetch tool to gather information to answer the question from opencode docs at https://opencode.ai
+   
+   # Tone and style
+  @@ -14,42 +10,7 @@ Remember that your output will be displayed on a command line interface. Your re
+  -IMPORTANT: You should minimize output tokens as much as possible while maintaining helpfulness, quality, and accuracy. Only address the specific query or task at hand, avoiding tangential information unless absolutely critical for completing the request. If you can answer in 1-3 sentences or a short paragraph, please do.
+  -IMPORTANT: You should NOT answer with unnecessary preamble or postamble (such as explaining your code or summarizing your action), unless the user asks you to.
+  -IMPORTANT: Keep your responses short, since they will be displayed on a command line interface. You MUST answer concisely with fewer than 4 lines (not including tool use or code generation), unless user asks for detail. Answer the user's question directly, without elaboration, explanation, or details. One word answers are best. Avoid introductions, conclusions, and explanations. You MUST avoid text before/after your response, such as "The answer is <answer>.", "Here is the content of the file..." or "Based on the information provided, the answer is..." or "Here is what I will do next...". Here are some examples to demonstrate appropriate verbosity:
+  -<example>
+  -user: what is 2+2?
+  -assistant: 4
+  -</example>
+  -
+  -<example>
+  -user: is 11 a prime number?
+  -assistant: Yes
+  -</example>
+  -
+  -<example>
+  -user: what command should I run to list files in the current directory?
+  -assistant: ls
+  -</example>
+  -
+  -<example>
+  -user: what command should I run to watch files in the current directory?
+  -assistant: [use the ls tool to list the files in the current directory, then read docs/commands in the relevant file to find out how to watch files]
+  -npm run dev
+  -</example>
+  -
+  -<example>
+  -user: what files are in the directory src/?
+  -assistant: [runs ls and sees foo.c, bar.c, baz.c]
+  -user: which file contains the implementation of foo?
+  -assistant: src/foo.c
+  -</example>
+  -
+  -<example>
+  -user: write tests for new feature
+  -assistant: [uses grep and glob search tools to find where similar tests are defined, uses concurrent read file tool use blocks in one tool call to read relevant files at the same time, uses edit file tool to write new tests]
+  -</example>
+  -
+  +IMPORTANT: Minimize output tokens while maintaining helpfulness and accuracy. Answer concisely in fewer than 4 lines (not including tool use or code generation), unless the user asks for detail. Avoid unnecessary preamble, postamble, introductions, conclusions, and explanations. One word answers are best.
+   # Proactiveness
+   You are allowed to be proactive, but only when the user asks you to do something. You should strive to strike a balance between:
+   1. Doing the right thing when asked, including taking actions and follow-up actions
+  @@ -81,8 +42,6 @@ NEVER commit changes unless the user explicitly asks you to. It is VERY IMPORTAN
+  -You MUST answer concisely with fewer than 4 lines of text (not including tool use or code generation), unless user asks for detail.
+  -
+   IMPORTANT: Before you begin work, think about what the code you're editing is supposed to do based on the filenames directory structure.
+   
+   # Code References
+  +1 -42
