@@ -95,8 +95,11 @@ jobs:
 
           TMP=$(mktemp -d)
           git archive "${{ steps.upstream_release.outputs.tag }}" | tar -x -C "$TMP"
-          rsync -a --delete --exclude '.git' --exclude '.github/workflows' --exclude '.patches' "$TMP"/ "$GITHUB_WORKSPACE"/
+          rsync -a --delete --exclude '.git' --exclude '.github/workflows' "$TMP"/ "$GITHUB_WORKSPACE"/
           rm -rf "$TMP"
+
+          git fetch origin dev
+          git checkout origin/dev -- .patches/
 
       - name: Commit upstream sync
         if: steps.check_done.outputs.done != 'true'
