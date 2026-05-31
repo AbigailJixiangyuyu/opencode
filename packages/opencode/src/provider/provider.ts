@@ -1612,8 +1612,10 @@ export const layer = Layer.effect(
         const customFetch = options["fetch"]
         const chunkTimeout = options["chunkTimeout"]
         const headerTimeout = options["headerTimeout"]
+        const proxyUrl = options["proxy"]
         delete options["chunkTimeout"]
         delete options["headerTimeout"]
+        delete options["proxy"]
 
         options["fetch"] = async (input: any, init?: BunFetchRequestInit) => {
           const fetchFn = customFetch ?? fetch
@@ -1631,6 +1633,15 @@ export const layer = Layer.effect(
 
           const combined = signals.length === 0 ? null : signals.length === 1 ? signals[0] : AbortSignal.any(signals)
           if (combined) opts.signal = combined
+
+          if (proxyUrl) {
+            const urlStr = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+            const actualUrl = new URL(urlStr)
+            const pUrl = new URL(proxyUrl)
+            actualUrl.protocol = pUrl.protocol
+            actualUrl.host = pUrl.host
+            input = new Request(actualUrl, opts)
+          }
 
           // Strip openai itemId metadata following what codex does
           if (

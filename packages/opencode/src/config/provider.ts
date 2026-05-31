@@ -109,6 +109,9 @@ export const Info = Schema.Struct({
           description:
             "Timeout in milliseconds between streamed SSE chunks for this provider. If no chunk arrives within this window, the request is aborted.",
         }),
+        proxy: Schema.optional(Schema.String).annotate({
+          description: "HTTPS proxy URL for this provider (e.g. http://127.0.0.1:7890)",
+        }),
       }),
       [Schema.Record(Schema.String, Schema.Any)],
     ),
